@@ -1,50 +1,35 @@
 # BlueGauge
 
-**See your Bluetooth battery levels at a glance — right in the Windows tray.**
+**Live battery readings for supported wireless devices in the Windows tray.**
 
-[Русская версия](README.ru.md) · [License: MIT](LICENSE)
+[Русская версия](README.ru.md) · [License: MIT](LICENSE) · [Third-party notices](THIRD-PARTY-NOTICES.md)
 
-![BlueGauge in demo mode: four paired devices, with a controller at 16%](assets/dashboard.png)
+![BlueGauge dashboard in demo mode](assets/dashboard.png)
 
-## What it does
+## How to use it
 
-- Shows the lowest known battery percentage among connected accessories in the tray. Left-click for the dashboard; right-click for refresh, settings and exit.
-- Shows connected, disconnected and unavailable readings separately. No made-up percentages.
-- Sends a low-battery notification at a configurable threshold. To avoid repeat alerts, a device must recover by five percentage points above the threshold before it can alert again.
-- Supports refresh intervals of 30, 60 or 120 seconds, manual refresh, optional start with Windows and English/Russian UI.
-- Runs locally: no accounts, telemetry, ads, subscriptions or administrator rights.
+Run the portable `BlueGauge.exe` from a release or build it below. Left-click the tray icon to open the compact dashboard. Right-click to refresh, change settings or exit. Closing the dashboard leaves the app running. If Windows hides the icon under **^**, drag it next to the clock.
 
-## Run on Windows
+The tray displays the lowest known level. The dashboard lists only active devices that provide battery or charging data, not everything paired with Windows. Low-battery alerts have a configurable threshold. English and Russian are included. No account, subscription, cloud, telemetry or administrator rights are needed.
 
-Download and extract `BlueGauge-v1.0.0-portable.zip` from **Releases**, or build from source with the steps below. Run `BlueGauge.exe` and look for the icon near the clock; if Windows hides it under **^**, drag it out to make it visible. Closing the dashboard leaves the app active in the tray. Choose **Exit** to stop it. The executable is unsigned.
+## Device support
 
-Windows 10/11 with .NET Framework 4.8 or later is required. BlueGauge works with Bluetooth Classic and Bluetooth LE devices that expose battery data to Windows. It does not implement vendor-specific protocols, headset component breakdowns, USB or 2.4 GHz dongle monitoring.
+| Device or protocol | Connection | Refresh |
+| --- | --- | --- |
+| ARDOR GAMING Phantom PRO V2 (`3554:F52D`) | 2.4 GHz USB receiver, tested with real hardware | Every 2 seconds |
+| ARDOR GAMING Phantom PRO V2 (`3554:F52E`) | USB cable, ID confirmed in the vendor config; hardware reading not verified | Every 2 seconds |
+| ARDOR GAMING Renegade (`25A7:FA4A`) | 2.4 GHz USB receiver; BatteryTray report and sample frame, not tested on this PC | Every 2 seconds; the mouse reports in 10% steps |
+| Accessories exposing battery to Windows or via standard BLE GATT | Bluetooth Classic / BLE | Configurable: 30, 60 or 120 seconds |
 
-## Demo and screenshot
+The USB provider sends battery and link-status queries on known HID collections. Updates reflect the percentage the device reports, not an estimate; a sleeping or disconnected mouse may stop answering. Other ARDOR models and USB receivers are not implied to work. See [hardware checks](docs/testing.md) for verification steps.
 
-```powershell
-.\BlueGauge.exe --demo
-.\BlueGauge.exe --snapshot assets\dashboard.png --en
-```
+## Demo, build and tests
 
-Demo mode does not read Bluetooth hardware, show low-battery notifications or change settings on disk. The language follows Windows; use `--en` or `--ru` to override it.
+The portable x64 release targets .NET 11 on Windows 10 (build 19041+) and Windows 11. It includes the .NET Desktop Runtime; there is nothing else to install. To build from source, install the .NET 11 SDK specified in `global.json` and run from the repository root:
 
-## Build and test
+    .\scripts\build.ps1 -Test
+    .\artifacts\win-x64\BlueGauge.exe --demo --en
 
-Requirements: Visual Studio 2022 or Build Tools with **.NET desktop development**, the **.NET Framework 4.8 targeting pack**, and a Windows 10/11 SDK. Use Windows PowerShell from the repository root:
+Use `-Live` instead of `-Test` to add Bluetooth API and USB HID checks. The first build restores Microsoft targeting/runtime packs. The portable executable is unsigned. The [Windows CI workflow](.github/workflows/windows.yml) runs the hardware-independent checks and publishes the x64 build.
 
-```powershell
-.\scripts\build.ps1 -Test
-```
-
-The result is `artifacts\BlueGauge.exe`. There are no NuGet packages. Use `-Live` instead of `-Test` to also exercise real Windows device discovery and PnP enumeration. The [Windows CI workflow](.github/workflows/windows.yml) builds the executable and runs tests without Bluetooth hardware.
-
-## How it works
-
-| Layer | Design |
-| --- | --- |
-| Discovery | WinRT enumerates paired Bluetooth Classic and LE Association Endpoints. Addresses and device container IDs merge duplicate endpoints rather than relying on device names. |
-| Battery data | SetupAPI reads the Windows Bluetooth PnP battery property when present. For connected LE devices without it, BlueGauge tries GATT Battery Service (`180F` / `2A19`) with cancellation and bounded concurrency. |
-| App | The WinForms UI uses a battery-source interface shared by live and demo modes. Background refreshes do not block the UI. Preferences live in `%LOCALAPPDATA%\BlueGauge\settings.json`. Optional autostart is a current-user Run entry. |
-
-The Windows PnP battery property is an implementation detail of the driver stack and may be unavailable for some devices. See the [hardware test checklist](docs/testing.md) to verify a model or report a compatibility issue.
+The WinForms UI combines WinRT / SetupAPI / GATT Bluetooth readings with a separate, faster Windows HID polling path. Preferences are local in `%LOCALAPPDATA%/BlueGauge/settings.json`; optional autostart uses the current-user Run key.

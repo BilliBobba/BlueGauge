@@ -9,8 +9,9 @@ namespace BlueGauge.Tests
     {
         private static int Main(string[] args)
         {
-            var checks = new List<Action> { Levels, LowestKnown, AlertHysteresis, AlertIndependence, Normalize, Demo, TrayIcon };
-            if (args.Contains("--live")) checks.Add(Live);
+            if (args.Contains("--hid")) { LiveHid(); return 0; }
+            var checks = new List<Action> { Levels, LowestKnown, AlertHysteresis, AlertIndependence, Normalize, Demo, TrayIcon, VisibleReadings, HidFrames };
+            if (args.Contains("--live")) { checks.Add(Live); checks.Add(LiveHid); }
             int failures = 0;
             foreach (var check in checks)
             {
@@ -75,8 +76,9 @@ namespace BlueGauge.Tests
             var source = new DemoBatterySource();
             var rows = source.ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
             Equal(4, rows.Count);
-            Equal((int?)16, BatteryMetrics.Lowest(rows).Percent);
-            Equal(1, rows.Count(row => !row.Connected));
+            Equal((int?)17, BatteryMetrics.Lowest(rows).Percent);
+            Equal(1, rows.Count(row => row.Transport == DeviceTransport.UsbReceiver));
+            Equal(1, rows.Count(row => row.Charging));
             try { source.ReadAsync(new CancellationToken(true)).GetAwaiter().GetResult(); }
             catch (OperationCanceledException) { return; }
             throw new Exception("Demo source ignored cancellation.");
@@ -99,6 +101,47 @@ namespace BlueGauge.Tests
                 Console.WriteLine("  Windows: {0} paired, {1} connected, {2} with a battery reading; {3} PnP battery node(s).",
                     rows.Count, rows.Count(row => row.Connected), rows.Count(row => row.Percent.HasValue), pnp.Count);
             }
+        }
+
+        private static void LiveHid()
+        {
+            using (var token = new CancellationTokenSource(TimeSpan.FromSeconds(6)))
+            {
+                var reader = new HidBatterySource();
+                var rows = reader.Read(token.Token, Console.WriteLine);
+                foreach (var row in rows) Console.WriteLine("  {0}: {1}% ({2}, charging: {3})", row.Name, row.Percent, row.Transport, row.Charging);
+                Console.WriteLine("  {0} supported USB device(s) answered.", rows.Count);
+                Equal(rows.Count, rows.Select(r => r.Id).Distinct().Count());
+            }
+        }
+
+        private static void VisibleReadings()
+        {
+            var active = BatteryMetrics.VisibleDevices(new[] {
+                Device(null), Device(24, false), Device(45),
+                new BatteryDevice("charging", "Charging USB device", DeviceKind.Mouse, true, null, DeviceTransport.UsbCable, true)
+            });
+            Equal(2, active.Length);
+            Equal((int?)45, active[0].Percent);
+            Equal(true, active[1].Charging);
+        }
+
+        private static void HidFrames()
+        {
+            byte[] request = OemMouseBattery.Request(OemMouseBattery.Power, 17);
+            Equal((byte)0x49, request[16]);
+            byte[] renegade = { 9, 4, 0, 0, 0, 2, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x3f };
+            Equal((int?)70, OemMouseBattery.ParsePower(renegade, 9, 10, out bool charging));
+            Equal(false, charging);
+            Equal(null, OemMouseBattery.ParsePower(renegade, 8, 10, out _));
+            renegade[16] ^= 1;
+            Equal(null, OemMouseBattery.ParsePower(renegade, 9, 10, out _));
+            byte[] off = { 8, 3, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x49 };
+            Equal((bool?)false, OemMouseBattery.IsLinked(off, 8));
+            // Real Phantom PRO V2 receiver report recorded during a local battery check.
+            byte[] phantom = { 8, 4, 0, 0, 0, 2, 0x37, 0, 0x0f, 0x2a, 0, 0, 0, 0, 0, 0, 0xd7 };
+            Equal((int?)55, OemMouseBattery.ParsePower(phantom, 8, 1, out charging));
+            Equal(false, charging);
         }
 
         private static BatteryDevice Device(int? percent, bool connected = true, string id = "x") => new BatteryDevice(id, id, DeviceKind.Other, connected, percent);

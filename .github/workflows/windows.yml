@@ -10,15 +10,21 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-2022
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
       - name: Build and test
-        shell: powershell
-        run: .\scripts\build.ps1 -Test
+        shell: pwsh
+        run: ./scripts/build.ps1 -Test
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
-          name: BlueGauge-Windows
-          path: artifacts/BlueGauge.exe
+          name: BlueGauge-Windows-x64
+          path: |
+            artifacts/win-x64/BlueGauge.exe
+            LICENSE
+            THIRD-PARTY-NOTICES.md
           if-no-files-found: error

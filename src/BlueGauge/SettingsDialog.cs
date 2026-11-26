@@ -46,9 +46,9 @@ namespace BlueGauge
                 BackColor = Palette.Surface, ForeColor = Palette.Main, TextAlign = HorizontalAlignment.Right,
                 AccessibleName = L.T("Low battery threshold (%)", "Порог низкого заряда (%)") };
             layout.Controls.Add(threshold, 1, 1);
-            layout.Controls.Add(Caption(L.T("Refresh interval", "Интервал обновления")), 0, 2);
+            layout.Controls.Add(Caption(L.T("Bluetooth refresh interval", "Опрос Bluetooth")), 0, 2);
             interval = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill,
-                BackColor = Palette.Surface, ForeColor = Palette.Main, AccessibleName = L.T("Refresh interval", "Интервал обновления") };
+                BackColor = Palette.Surface, ForeColor = Palette.Main, AccessibleName = L.T("Bluetooth refresh interval", "Опрос Bluetooth") };
             foreach (var seconds in Intervals) interval.Items.Add(seconds + L.T(" s", " с"));
             interval.SelectedIndex = Math.Max(0, Array.IndexOf(Intervals, settings.RefreshSeconds));
             layout.Controls.Add(interval, 1, 2);
@@ -92,6 +92,16 @@ namespace BlueGauge
             settings.Alerts = next.Alerts;
             DialogResult = DialogResult.OK;
         }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            int dark = 1;
+            DwmSetWindowAttribute(Handle, 20, ref dark, 4);
+        }
+
+        [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 
         private static void AddWide(TableLayoutPanel layout, Control control, int row)
         {

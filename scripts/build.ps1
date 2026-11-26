@@ -1,31 +1,25 @@
 [CmdletBinding()]
-param([switch]$Test, [switch]$Live)
+param(
+    [switch]$Test,
+    [switch]$Live,
+    [ValidateSet('win-x64', 'win-arm64')][string]$Runtime = 'win-x64'
+)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-$msbuild = $null
-if (Test-Path $vswhere) {
-    $msbuild = & $vswhere -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\Current\Bin\MSBuild.exe' |
-        Where-Object { Test-Path (Join-Path (Split-Path $_) 'Roslyn\Microsoft.CSharp.Core.targets') } | Select-Object -First 1
-}
-if (-not $msbuild) {
-    $msbuild = Get-ChildItem "$env:ProgramFiles\Microsoft Visual Studio\*\*\MSBuild\Current\Bin\MSBuild.exe", "${env:ProgramFiles(x86)}\Microsoft Visual Studio\*\*\MSBuild\Current\Bin\MSBuild.exe" -ErrorAction SilentlyContinue |
-        Where-Object { Test-Path (Join-Path $_.DirectoryName 'Roslyn\Microsoft.CSharp.Core.targets') } | Select-Object -First 1 -ExpandProperty FullName
-}
-if (-not $msbuild) { throw 'MSBuild with the C# compiler was not found. Install Visual Studio 2022 Build Tools (.NET desktop workload).' }
-$winmd = Get-ChildItem (Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\UnionMetadata') -Recurse -Filter Windows.winmd | Where-Object { $_.FullName -notmatch '\\Facade\\' } | Sort-Object FullName -Descending | Select-Object -First 1
-if (-not $winmd) { throw 'Windows SDK Windows.winmd was not found.' }
-Write-Host "Using MSBuild: $msbuild"
-Write-Host "Using Windows.winmd: $($winmd.FullName)"
-& $msbuild (Join-Path $root 'src\BlueGauge\BlueGauge.csproj') /t:Rebuild /p:Configuration=Release /p:WindowsWinMd="$($winmd.FullName)" /v:minimal
-if ($LASTEXITCODE) { throw "Build failed with exit code $LASTEXITCODE" }
-New-Item -ItemType Directory -Force (Join-Path $root 'artifacts') | Out-Null
-Copy-Item (Join-Path $root 'src\BlueGauge\bin\Release\BlueGauge.exe') (Join-Path $root 'artifacts\BlueGauge.exe') -Force
-Write-Host "Built artifacts\BlueGauge.exe"
-if ($Test -or $Live) {
-    & $msbuild (Join-Path $root 'tests\BlueGauge.Tests\BlueGauge.Tests.csproj') /t:Rebuild /p:Configuration=Release /v:minimal
-    if ($LASTEXITCODE) { throw "Test build failed with exit code $LASTEXITCODE" }
-    $testExe = Join-Path $root 'tests\BlueGauge.Tests\bin\Release\BlueGauge.Tests.exe'
-    if ($Live) { & $testExe --live } else { & $testExe }
-    if ($LASTEXITCODE) { throw "Tests failed with exit code $LASTEXITCODE" }
-}
+Push-Location $root
+try {
+    $sdk = & dotnet --version
+    if ($LASTEXITCODE -ne 0 -or $sdk -notmatch '^11\.') { throw 'Install the .NET 11 SDK; see global.json.' }
+    Write-Host "Using .NET SDK $sdk"
+    if ($Test -or $Live) {
+        $testArgs = @('run', '--project', 'tests/BlueGauge.Tests/BlueGauge.Tests.csproj', '-c', 'Release')
+        if ($Live) { $testArgs += @('--', '--live') }
+        & dotnet @testArgs
+        if ($LASTEXITCODE -ne 0) { throw "Tests failed (exit $LASTEXITCODE)." }
+    }
+
+    $destination = Join-Path $root "artifacts/$Runtime"
+    & dotnet publish src/BlueGauge/BlueGauge.csproj -c Release -r $Runtime --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o $destination
+    if ($LASTEXITCODE -ne 0) { throw "Publish failed (exit $LASTEXITCODE). Close BlueGauge before rebuilding if the executable is in use." }
+    Write-Host "Built artifacts/$Runtime/BlueGauge.exe"
+} finally { Pop-Location }

@@ -13,8 +13,7 @@ namespace BlueGauge
         [STAThread]
         private static void Main(string[] args)
         {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
+            ApplicationConfiguration.Initialize();
             if (args.Contains("--en")) L.Russian = false;
             if (args.Contains("--ru")) L.Russian = true;
 

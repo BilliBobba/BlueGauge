@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Drawing;
 using System.Linq;
 using System.Threading;
@@ -13,22 +14,27 @@ namespace BlueGauge
         private readonly Dashboard window;
         private readonly NotifyIcon tray;
         private readonly ContextMenuStrip menu;
-        private readonly System.Windows.Forms.Timer timer;
+        private readonly System.Windows.Forms.Timer bluetoothTimer;
+        private readonly System.Windows.Forms.Timer hidTimer;
         private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
         private readonly LowBatteryTracker alerts = new LowBatteryTracker();
-        private readonly IBatterySource source;
+        private readonly IBatterySource bluetooth;
+        private readonly HidBatterySource hid = new HidBatterySource();
         private readonly bool demo;
         private readonly Preferences settings;
         private Icon icon;
-        private bool refreshing;
-        private bool stopping;
-        private IReadOnlyList<BatteryDevice> devices = Array.Empty<BatteryDevice>();
+        private bool checkingBluetooth, checkingHid, stopping;
+        private IReadOnlyList<BatteryDevice> bluetoothRows = Array.Empty<BatteryDevice>();
+        private IReadOnlyList<BatteryDevice> hidRows = Array.Empty<BatteryDevice>();
         private DateTime? updatedAt;
+        private string bluetoothError, hidError;
+        private int? iconLevel;
+        private int iconThreshold;
 
         internal TrayApplication(bool demo, bool background)
         {
             this.demo = demo;
-            source = demo ? (IBatterySource)new DemoBatterySource() : new WindowsBatterySource();
+            bluetooth = demo ? (IBatterySource)new DemoBatterySource() : new WindowsBatterySource();
             settings = demo ? new Preferences() : Preferences.Load();
             window = new Dashboard(demo);
             window.RefreshRequested += async (s, e) => await RefreshAsync();
@@ -39,16 +45,19 @@ namespace BlueGauge
             menu.Items.Add(L.T("Settings…", "Настройки…"), null, (s, e) => OpenSettings());
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(L.T("Exit", "Выход"), null, (s, e) => ExitThread());
-            icon = TrayArtwork.Create(null, settings.LowThreshold);
+            iconThreshold = settings.LowThreshold;
+            icon = TrayArtwork.Create(null, iconThreshold);
             tray = new NotifyIcon { ContextMenuStrip = menu, Icon = icon, Text = "BlueGauge", Visible = true };
             tray.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) ShowWindow(); };
             tray.BalloonTipClicked += (s, e) => ShowWindow();
-            timer = new System.Windows.Forms.Timer { Interval = settings.RefreshSeconds * 1000 };
-            timer.Tick += async (s, e) => await RefreshAsync();
-            // Create the WinForms handle even for a quiet launch to marshal refreshes to the UI thread.
+            bluetoothTimer = new System.Windows.Forms.Timer { Interval = settings.RefreshSeconds * 1000 };
+            bluetoothTimer.Tick += async (s, e) => await RefreshBluetoothAsync();
+            hidTimer = new System.Windows.Forms.Timer { Interval = 2000 };
+            hidTimer.Tick += async (s, e) => await RefreshHidAsync();
             _ = window.Handle;
             if (!background) ShowWindow();
-            timer.Start();
+            bluetoothTimer.Start();
+            if (!demo) hidTimer.Start();
             window.BeginInvoke((Action)(async () => await RefreshAsync()));
         }
 
@@ -57,6 +66,7 @@ namespace BlueGauge
             window.Show();
             if (window.WindowState == FormWindowState.Minimized) window.WindowState = FormWindowState.Normal;
             window.Activate();
+            if (!demo) _ = RefreshHidAsync();
         }
 
         private void OpenSettings()
@@ -66,55 +76,89 @@ namespace BlueGauge
             {
                 if (dialog.ShowDialog(window) != DialogResult.OK) return;
                 alerts.Reset();
-                timer.Interval = settings.RefreshSeconds * 1000;
-                Render(null);
+                bluetoothTimer.Interval = settings.RefreshSeconds * 1000;
+                Render();
             }
         }
 
         private async Task RefreshAsync()
         {
-            if (refreshing || stopping) return;
-            refreshing = true;
+            if (stopping) return;
             window.SetBusy(true);
+            try { await Task.WhenAll(RefreshHidAsync(), RefreshBluetoothAsync()); }
+            finally { if (!stopping) window.SetBusy(false); }
+        }
+
+        private async Task RefreshHidAsync()
+        {
+            if (demo || checkingHid || stopping) return;
+            checkingHid = true;
             var token = lifetime.Token;
             try
             {
-                devices = await Task.Run(() => source.ReadAsync(token), token);
+                var rows = await Task.Run(() => hid.Read(token), token);
                 if (stopping) return;
+                hidRows = rows;
+                hidError = null;
+                if (rows.Count > 0) updatedAt = DateTime.Now;
+                Render();
+            }
+            catch (Exception ex) when (ex is Win32Exception || ex is OperationCanceledException)
+            {
+                if (stopping) return;
+                hidRows = Array.Empty<BatteryDevice>();
+                hidError = L.T("Could not read USB receivers.", "Не удалось прочитать USB-приёмники.");
+                Render();
+            }
+            finally { checkingHid = false; }
+        }
+
+        private async Task RefreshBluetoothAsync()
+        {
+            if (checkingBluetooth || stopping) return;
+            checkingBluetooth = true;
+            var token = lifetime.Token;
+            try
+            {
+                var rows = await Task.Run(() => bluetooth.ReadAsync(token), token);
+                if (stopping) return;
+                bluetoothRows = rows;
+                bluetoothError = null;
                 updatedAt = DateTime.Now;
-                Render(null);
-                var low = alerts.Update(devices, settings.LowThreshold, settings.Alerts && !demo);
-                if (low.Count > 0)
-                {
-                    var list = string.Join("\n", low.Take(4).Select(d => d.Name + " — " + d.Percent + "%"));
-                    if (low.Count > 4) list += "\n+" + (low.Count - 4);
-                    tray.ShowBalloonTip(5000, L.T("BlueGauge · Low battery", "BlueGauge · Низкий заряд"), list, ToolTipIcon.Warning);
-                }
+                Render();
             }
             catch (Exception ex)
             {
                 if (stopping) return;
                 System.Diagnostics.Trace.TraceWarning("Bluetooth refresh failed: {0}", ex.GetType().Name);
-                Render(updatedAt.HasValue
-                    ? L.T("Bluetooth refresh failed. Showing the last readings.", "Не удалось обновить Bluetooth. Показаны последние данные.")
-                    : L.T("Couldn't refresh Bluetooth. Check the adapter and try again.", "Не удалось обновить Bluetooth. Проверьте адаптер и повторите попытку."));
+                bluetoothRows = Array.Empty<BatteryDevice>();
+                bluetoothError = L.T("Could not refresh Bluetooth.", "Не удалось обновить Bluetooth.");
+                Render();
             }
-            finally
-            {
-                refreshing = false;
-                if (!stopping) window.SetBusy(false);
-            }
+            finally { checkingBluetooth = false; }
         }
 
-        private void Render(string error)
+        private void Render()
         {
-            window.UpdateDevices(devices, updatedAt, settings.LowThreshold, error);
-            int? percent = error == null ? BatteryMetrics.Lowest(devices)?.Percent : null;
-            var next = TrayArtwork.Create(percent, settings.LowThreshold);
-            tray.Icon = next;
-            icon.Dispose();
-            icon = next;
+            var devices = hidRows.Concat(bluetoothRows).ToArray();
+            var active = BatteryMetrics.VisibleDevices(devices);
+            window.UpdateDevices(active, updatedAt, settings.LowThreshold, hidError ?? (active.Length == 0 ? bluetoothError : null));
+            int? percent = BatteryMetrics.Lowest(active)?.Percent;
+            if (iconLevel != percent || iconThreshold != settings.LowThreshold)
+            {
+                var next = TrayArtwork.Create(percent, settings.LowThreshold);
+                tray.Icon = next;
+                icon.Dispose();
+                icon = next;
+                iconLevel = percent;
+                iconThreshold = settings.LowThreshold;
+            }
             tray.Text = "BlueGauge" + (demo ? " · Demo" : "") + (percent.HasValue ? " · " + percent + "%" : "");
+            var low = alerts.Update(devices, settings.LowThreshold, settings.Alerts && !demo);
+            if (low.Count == 0) return;
+            string list = string.Join("\n", low.Take(4).Select(d => d.Name + " — " + d.Percent + "%"));
+            if (low.Count > 4) list += "\n+" + (low.Count - 4);
+            tray.ShowBalloonTip(5000, L.T("BlueGauge · Low battery", "BlueGauge · Низкий заряд"), list, ToolTipIcon.Warning);
         }
 
         protected override void ExitThreadCore()
@@ -122,7 +166,8 @@ namespace BlueGauge
             if (stopping) return;
             stopping = true;
             lifetime.Cancel();
-            timer.Dispose();
+            bluetoothTimer.Dispose();
+            hidTimer.Dispose();
             tray.Visible = false;
             tray.Dispose();
             icon.Dispose();
@@ -130,7 +175,8 @@ namespace BlueGauge
             window.AllowClose = true;
             window.Close();
             window.Dispose();
-            lifetime.Dispose();
+            // A running HID exchange may still be draining native I/O. Its token is owned by the context.
+            if (!checkingBluetooth && !checkingHid) lifetime.Dispose();
             base.ExitThreadCore();
         }
     }

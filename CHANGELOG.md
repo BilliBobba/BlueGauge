@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0
+
+- Moved the WinForms app and test harness to .NET 11, with a self-contained x64 release.
+- Replaced the dashboard with a compact dark window without the standard title bar.
+- Show live battery readings instead of listing all paired devices.
+- Added Windows HID battery polling every two seconds for supported ARDOR receivers, including Phantom PRO V2 (3554:F52D).
+- Added a Phantom cable profile and an Areson profile for the Renegade, with protocol and visibility tests.
+
 ## 1.0.0
 
 - Initial Windows release: tray percentage, per-device dashboard, and low-battery notifications.
