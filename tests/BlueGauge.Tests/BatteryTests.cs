@@ -7,11 +7,12 @@ namespace BlueGauge.Tests
 {
     internal static class BatteryTests
     {
+        [STAThread]
         private static int Main(string[] args)
         {
             if (args.Contains("--hid")) { LiveHid(); return 0; }
-            var checks = new List<Action> { Levels, LowestKnown, AlertHysteresis, AlertIndependence, Normalize, Demo, TrayIcon, VisibleReadings, HidFrames };
-            if (args.Contains("--live")) { checks.Add(Live); checks.Add(LiveHid); }
+            var checks = new List<Action> { Levels, LowestKnown, AlertHysteresis, AlertIndependence, Normalize, Demo, TrayIcon, VisibleReadings, HidFrames, TaskbarSpace, TaskbarCapacity };
+            if (args.Contains("--live")) { checks.Add(Live); checks.Add(LiveHid); checks.Add(LiveTaskbar); }
             int failures = 0;
             foreach (var check in checks)
             {
@@ -118,12 +119,52 @@ namespace BlueGauge.Tests
         private static void VisibleReadings()
         {
             var active = BatteryMetrics.VisibleDevices(new[] {
-                Device(null), Device(24, false), Device(45),
+                Device(null, id: "unknown"), Device(24, false, "off"), Device(45),
                 new BatteryDevice("charging", "Charging USB device", DeviceKind.Mouse, true, null, DeviceTransport.UsbCable, true)
             });
-            Equal(2, active.Length);
+            Equal(3, active.Length);
             Equal((int?)45, active[0].Percent);
-            Equal(true, active[1].Charging);
+            Equal(true, active.Any(d => d.Charging));
+            Equal(true, active.Any(d => !d.Charging && d.Percent == null));
+        }
+
+        private static void TaskbarSpace()
+        {
+            var bar = new System.Drawing.Rectangle(0, 1020, 1920, 60);
+            var start = new System.Drawing.Rectangle(547, 1020, 56, 60);
+            var widgets = new System.Drawing.Rectangle(8, 1020, 190, 60);
+            Equal(new System.Drawing.Rectangle(204, 1020, 337, 60), TaskbarPlacement.FindFreeSpace(bar, start, widgets, 6));
+            Equal(new System.Drawing.Rectangle(6, 1020, 535, 60), TaskbarPlacement.FindFreeSpace(bar, start, System.Drawing.Rectangle.Empty, 6));
+            start.X = 0;
+            Equal(System.Drawing.Rectangle.Empty, TaskbarPlacement.FindFreeSpace(bar, start, widgets, 6));
+        }
+
+        private static void TaskbarCapacity()
+        {
+            Equal((226, 4), TaskbarPanel.Fit(337, 96, 4));
+            Equal((154, 2), TaskbarPanel.Fit(200, 96, 4));
+            Equal((46, 0), TaskbarPanel.Fit(52, 96, 4));
+            Equal((0, 0), TaskbarPanel.Fit(40, 96, 4));
+            Equal((284, 4), TaskbarPanel.Fit(350, 120, 4));
+        }
+
+        private static void LiveTaskbar()
+        {
+            System.Windows.Forms.Application.SetHighDpiMode(System.Windows.Forms.HighDpiMode.PerMonitorV2);
+            var slot = System.Threading.Tasks.Task.Run(TaskbarPlacement.Probe).GetAwaiter().GetResult();
+            if (!slot.HasValue) { Console.WriteLine("  No free slot left of Start (or taskbar is hidden)."); return; }
+            Console.WriteLine($"  Taskbar space left of Start: {slot.Value.Free}, DPI {slot.Value.Dpi}.");
+            using var panel = new TaskbarPanel(() => { }, true);
+            panel.UpdateDevices(new[] { Device(55), Device(null, id: "unknown") }, 20);
+            panel.Place(slot.Value);
+            if (TaskbarPanel.Fit(slot.Value.Free.Width, slot.Value.Dpi, 2).Width == 0) return;
+            Equal(true, panel.Visible);
+            var bar = slot.Value.Free;
+            Equal(bar.Right, panel.Bounds.Right);
+            Equal(true, bar.Contains(panel.Bounds));
+            using var image = new System.Drawing.Bitmap(panel.Width, panel.Height);
+            panel.DrawToBitmap(image, panel.ClientRectangle);
+            Console.WriteLine($"  Panel rendered at {panel.Bounds}.");
         }
 
         private static void HidFrames()

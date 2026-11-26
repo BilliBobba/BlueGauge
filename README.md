@@ -10,7 +10,11 @@
 
 Get the portable ZIP from the [latest release](https://github.com/BilliBobba/BlueGauge/releases/latest), extract it, and run `BlueGauge.exe`. No separate .NET installation is needed for the current portable build. Left-click the tray icon to open the compact dashboard. Right-click to refresh, change settings or exit. Closing the dashboard leaves the app running. If Windows hides the icon under **^**, drag it next to the clock.
 
-The tray displays the lowest known level. The dashboard lists only active devices that provide battery or charging data, not everything paired with Windows. Low-battery alerts have a configurable threshold. English and Russian are included. No account, subscription, cloud, telemetry or administrator rights are needed.
+The tray displays the lowest known level. The dashboard lists connected devices detected by the Bluetooth and supported USB providers, not everything paired with Windows. `—` means a connected device did not report a battery percentage. Low-battery alerts have a configurable threshold. English and Russian are included. No account, subscription, cloud, telemetry or administrator rights are needed.
+
+### Taskbar panel (Windows 11)
+
+With **centered** taskbar alignment, BlueGauge displays a compact panel just left of Start on the primary taskbar. It shows one icon and percentage per connected device. When space runs out, `+N` counts the remaining devices; hover for the full list or click to open the dashboard. You can turn the panel off in BlueGauge settings. Windows 11 has no supported insertion point there: the panel is a separate window over free taskbar space, so it hides when there is no room, when the taskbar is hidden, or in fullscreen. The tray icon continues to work.
 
 ## Device support
 

@@ -18,8 +18,9 @@ namespace BlueGauge
         [DataMember] public int LowThreshold { get; set; } = 20;
         [DataMember] public int RefreshSeconds { get; set; } = 60;
         [DataMember] public bool Alerts { get; set; } = true;
+        [DataMember] public bool TaskbarPanel { get; set; } = true;
 
-        [OnDeserializing] private void SetDefaults(StreamingContext _) { LowThreshold = 20; RefreshSeconds = 60; Alerts = true; }
+        [OnDeserializing] private void SetDefaults(StreamingContext _) { LowThreshold = 20; RefreshSeconds = 60; Alerts = true; TaskbarPanel = true; }
 
         internal static Preferences Load()
         {

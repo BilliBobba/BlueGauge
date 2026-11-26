@@ -134,7 +134,8 @@ namespace BlueGauge
                 bool? linked = profile.Receiver ? OemMouseBattery.IsLinked(Ask(OemMouseBattery.Link), id) : true;
                 if (linked == false) return null;
                 int? percent = OemMouseBattery.ParsePower(Ask(OemMouseBattery.Power), id, profile.Scale, out bool charging);
-                if (!percent.HasValue || (profile.UsbId == "vid_3554&pid_f52d" && linked != true && !charging)) return null;
+                if (profile.UsbId == "vid_3554&pid_f52d" && linked != true && !charging) return null;
+                if (!percent.HasValue && (!profile.Receiver || linked != true)) return null;
                 return new BatteryDevice(profile.Key, profile.Name, DeviceKind.Mouse, true, percent, profile.Transport, charging);
             }
         }

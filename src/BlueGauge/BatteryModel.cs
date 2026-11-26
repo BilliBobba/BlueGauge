@@ -56,7 +56,13 @@ namespace BlueGauge
     internal static class BatteryMetrics
     {
         internal static BatteryDevice[] VisibleDevices(IEnumerable<BatteryDevice> devices) => devices
-            .Where(d => d.Connected && (d.Percent.HasValue || d.Charging)).ToArray();
+            .Where(d => d.Connected)
+            .GroupBy(d => d.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(d => d.Transport != DeviceTransport.Bluetooth)
+                .ThenByDescending(d => d.Percent.HasValue).First())
+            .OrderBy(d => d.Percent ?? 101)
+            .ThenBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
 
         internal static BatteryDevice Lowest(IEnumerable<BatteryDevice> devices) => devices
             .Where(d => d.Connected && d.Percent.HasValue).OrderBy(d => d.Percent.Value)

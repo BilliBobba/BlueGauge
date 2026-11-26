@@ -12,7 +12,9 @@ Use `-Live` to also exercise Windows Bluetooth discovery and the USB HID reader.
 | Switch off the mouse or unplug the receiver | The card and its contribution to the tray number disappear after a poll; a sleeping mouse may return after movement. |
 | Phantom connected by cable `3554:F52E` | The cable profile is tried before its receiver, so only one Phantom card can be shown. This connection still needs hardware verification. |
 | Renegade through `25A7:FA4A` | Compatible firmware should report in increments of ten. This profile is based on the sample in BatteryTray issue #18; it has not been tested on a physical Renegade in BlueGauge. |
-| Bluetooth device is only paired, disconnected, or does not report a battery level | It does not appear in the dashboard. |
+| Bluetooth device is only paired or disconnected | It does not appear. A connected device without a percentage appears with a dash. |
+| Windows 11 with centered taskbar icons and a supported connected device | The battery panel appears in unused space left of Start without covering Widgets. Hover for the full list, or click to open BlueGauge. |
+| The taskbar is hidden, Start is aligned to the left, or an app covers the primary display fullscreen | The panel hides; the tray remains available when Windows shows it. |
 | A connected Bluetooth device reports a level through Windows or BLE GATT | It is shown once with its actual percentage. |
 | Close with the custom × and open again from the tray | The dashboard is hidden, monitoring continues, and reopening does not start another instance. |
 

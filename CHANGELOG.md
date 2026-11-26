@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Added an optional Windows 11 battery panel to the left of the centered Start button.
+- Connected devices without a battery percentage are shown with a dash; disconnected pairings stay hidden.
+- The taskbar panel uses a `+N` indicator and a full device tooltip when space is limited.
+
 ## 1.1.0
 
 - Moved the WinForms app and test harness to .NET 11, with a self-contained x64 release.

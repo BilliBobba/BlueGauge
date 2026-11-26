@@ -130,7 +130,7 @@ namespace BlueGauge
                     foreach (var control in rows.Controls.Cast<Control>().ToArray()) control.Dispose();
                     if (visible.Length == 0)
                     {
-                        var empty = Caption(L.T("No battery readings yet.\nConnect a supported device.", "Данных о заряде пока нет.\nПодключи поддерживаемое устройство."), Detail, Palette.Muted);
+                        var empty = Caption(L.T("No connected devices.\nConnect a supported device.", "Нет подключённых устройств.\nПодключи поддерживаемое устройство."), Detail, Palette.Muted);
                         empty.Height = Pixels(89);
                         empty.Dock = DockStyle.None;
                         empty.TextAlign = ContentAlignment.MiddleCenter;
@@ -260,7 +260,7 @@ namespace BlueGauge
                 using (var edge = new Pen(Outline)) g.DrawRounded(edge, new RectangleF(0.5f, 0.5f, Width - 2, Height - 2), P(8));
                 int mid = Height / 2;
                 using (var fill = new SolidBrush(Tile)) g.FillRounded(fill, new RectangleF(P(9), mid - P(15), P(30), P(30)), P(7));
-                DrawDevice(g, device.Kind, P(24), mid, k);
+                DrawDevice(g, device.Kind, P(24), mid, k, Aqua);
                 var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
                 var textWidth = Math.Max(1, Width - P(132));
                 TextRenderer.DrawText(g, device.Name, Body, new Rectangle(P(48), mid - P(17), textWidth, P(19)), Palette.Main, flags);
@@ -273,12 +273,12 @@ namespace BlueGauge
             }
         }
 
-        private static void DrawDevice(Graphics g, DeviceKind kind, int cx, int cy, float k)
+        internal static void DrawDevice(Graphics g, DeviceKind kind, int cx, int cy, float k, Color color)
         {
             var state = g.Save();
             g.TranslateTransform(cx, cy);
             g.ScaleTransform(k, k);
-            using (var p = new Pen(Aqua, 1.5f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            using (var p = new Pen(color, 1.5f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
             {
                 switch (kind)
                 {

@@ -20,6 +20,10 @@ namespace BlueGauge
         private readonly LowBatteryTracker alerts = new LowBatteryTracker();
         private readonly IBatterySource bluetooth;
         private readonly HidBatterySource hid = new HidBatterySource();
+        private readonly System.Windows.Forms.Timer taskbarTimer;
+        private TaskbarPanel taskbarPanel;
+        private TaskbarSlot? taskbarSlot;
+        private bool checkingTaskbar;
         private readonly bool demo;
         private readonly Preferences settings;
         private Icon icon;
@@ -54,11 +58,17 @@ namespace BlueGauge
             bluetoothTimer.Tick += async (s, e) => await RefreshBluetoothAsync();
             hidTimer = new System.Windows.Forms.Timer { Interval = 2000 };
             hidTimer.Tick += async (s, e) => await RefreshHidAsync();
+            taskbarTimer = new System.Windows.Forms.Timer { Interval = 750 };
+            taskbarTimer.Tick += async (s, e) => await RefreshTaskbarPlacementAsync();
             _ = window.Handle;
             if (!background) ShowWindow();
             bluetoothTimer.Start();
             if (!demo) hidTimer.Start();
-            window.BeginInvoke((Action)(async () => await RefreshAsync()));
+            window.BeginInvoke((Action)(async () =>
+            {
+                ApplyTaskbarSetting();
+                await RefreshAsync();
+            }));
         }
 
         private void ShowWindow()
@@ -77,6 +87,7 @@ namespace BlueGauge
                 if (dialog.ShowDialog(window) != DialogResult.OK) return;
                 alerts.Reset();
                 bluetoothTimer.Interval = settings.RefreshSeconds * 1000;
+                ApplyTaskbarSetting();
                 Render();
             }
         }
@@ -143,6 +154,7 @@ namespace BlueGauge
             var devices = hidRows.Concat(bluetoothRows).ToArray();
             var active = BatteryMetrics.VisibleDevices(devices);
             window.UpdateDevices(active, updatedAt, settings.LowThreshold, hidError ?? (active.Length == 0 ? bluetoothError : null));
+            UpdateTaskbarPanel(active);
             int? percent = BatteryMetrics.Lowest(active)?.Percent;
             if (iconLevel != percent || iconThreshold != settings.LowThreshold)
             {
@@ -161,6 +173,55 @@ namespace BlueGauge
             tray.ShowBalloonTip(5000, L.T("BlueGauge · Low battery", "BlueGauge · Низкий заряд"), list, ToolTipIcon.Warning);
         }
 
+        private void ApplyTaskbarSetting()
+        {
+            if (settings.TaskbarPanel && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+            {
+                taskbarTimer.Start();
+                _ = RefreshTaskbarPlacementAsync();
+            }
+            else
+            {
+                taskbarTimer.Stop();
+                taskbarSlot = null;
+                taskbarPanel?.Hide();
+            }
+        }
+
+        private async Task RefreshTaskbarPlacementAsync()
+        {
+            if (stopping || checkingTaskbar || !settings.TaskbarPanel) return;
+            checkingTaskbar = true;
+            try
+            {
+                // UI Automation is cross-process: never wait for Explorer on the message loop.
+                var slot = await Task.Run(TaskbarPlacement.Probe);
+                if (stopping || !settings.TaskbarPanel) return;
+                taskbarSlot = slot;
+                UpdateTaskbarPanel(BatteryMetrics.VisibleDevices(hidRows.Concat(bluetoothRows)));
+            }
+            catch (Exception ex)
+            {
+                if (stopping) return;
+                System.Diagnostics.Trace.TraceWarning("Taskbar probe failed: {0}", ex.GetType().Name);
+                taskbarSlot = null;
+                taskbarPanel?.Hide();
+            }
+            finally { checkingTaskbar = false; }
+        }
+
+        private void UpdateTaskbarPanel(BatteryDevice[] active)
+        {
+            if (!settings.TaskbarPanel || taskbarSlot is not TaskbarSlot slot || active.Length == 0)
+            {
+                taskbarPanel?.Hide();
+                return;
+            }
+            taskbarPanel ??= new TaskbarPanel(ShowWindow, demo);
+            taskbarPanel.UpdateDevices(active, settings.LowThreshold);
+            taskbarPanel.Place(slot);
+        }
+
         protected override void ExitThreadCore()
         {
             if (stopping) return;
@@ -168,6 +229,9 @@ namespace BlueGauge
             lifetime.Cancel();
             bluetoothTimer.Dispose();
             hidTimer.Dispose();
+            taskbarTimer.Dispose();
+            taskbarPanel?.Close();
+            taskbarPanel?.Dispose();
             tray.Visible = false;
             tray.Dispose();
             icon.Dispose();
