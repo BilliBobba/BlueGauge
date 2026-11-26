@@ -1,0 +1,24 @@
+name: Windows build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test
+        shell: powershell
+        run: .\scripts\build.ps1 -Test
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlueGauge-Windows
+          path: artifacts/BlueGauge.exe
+          if-no-files-found: error
