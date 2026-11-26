@@ -2,13 +2,13 @@
 
 **Live battery readings for supported wireless devices in the Windows tray.**
 
-[Русская версия](README.ru.md) · [License: MIT](LICENSE) · [Third-party notices](THIRD-PARTY-NOTICES.md)
+[Download for Windows x64](https://github.com/BilliBobba/BlueGauge/releases/latest) · [All releases](https://github.com/BilliBobba/BlueGauge/releases) · [Русская версия](README.ru.md) · [MIT](LICENSE)
 
 ![BlueGauge dashboard in demo mode](assets/dashboard.png)
 
-## How to use it
+## Download and run
 
-Run the portable `BlueGauge.exe` from a release or build it below. Left-click the tray icon to open the compact dashboard. Right-click to refresh, change settings or exit. Closing the dashboard leaves the app running. If Windows hides the icon under **^**, drag it next to the clock.
+Get the portable ZIP from the [latest release](https://github.com/BilliBobba/BlueGauge/releases/latest), extract it, and run `BlueGauge.exe`. No separate .NET installation is needed for the current portable build. Left-click the tray icon to open the compact dashboard. Right-click to refresh, change settings or exit. Closing the dashboard leaves the app running. If Windows hides the icon under **^**, drag it next to the clock.
 
 The tray displays the lowest known level. The dashboard lists only active devices that provide battery or charging data, not everything paired with Windows. Low-battery alerts have a configurable threshold. English and Russian are included. No account, subscription, cloud, telemetry or administrator rights are needed.
 
@@ -32,4 +32,13 @@ The portable x64 release targets .NET 11 on Windows 10 (build 19041+) and Window
 
 Use `-Live` instead of `-Test` to add Bluetooth API and USB HID checks. The first build restores Microsoft targeting/runtime packs. The portable executable is unsigned. The [Windows CI workflow](.github/workflows/windows.yml) runs the hardware-independent checks and publishes the x64 build.
 
-The WinForms UI combines WinRT / SetupAPI / GATT Bluetooth readings with a separate, faster Windows HID polling path. Preferences are local in `%LOCALAPPDATA%/BlueGauge/settings.json`; optional autostart uses the current-user Run key.
+## Project layout
+
+| Path | Contents |
+| --- | --- |
+| `src/BlueGauge/` | .NET 11 WinForms app, tray UI, Windows Bluetooth and USB HID providers |
+| `tests/BlueGauge.Tests/` | Hardware-independent tests and optional live device diagnostics |
+| `assets/` | App icon and English/Russian interface screenshots |
+| `scripts/` | Build and test entry point |
+
+Preferences are saved in `%LOCALAPPDATA%/BlueGauge/settings.json`; optional autostart uses the current-user Run key. See the [changelog](CHANGELOG.md), [release checklist](docs/releasing.md) and [third-party notices](THIRD-PARTY-NOTICES.md).
