@@ -105,6 +105,7 @@ namespace BlueGauge
                     rows.Add(new BatteryDevice(profile.Key, profile.Name, DeviceKind.Mouse, true, null, profile.Transport));
             }
             rows.AddRange(PnpBatteryReader.ReadWiredHeadsets(token));
+            rows.AddRange(PnpBatteryReader.ReadUsbKeyboards(token));
             return rows;
         }
 

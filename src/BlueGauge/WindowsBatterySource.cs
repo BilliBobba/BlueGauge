@@ -283,6 +283,67 @@ namespace BlueGauge
         // Only positively identified wired models: a generic USB audio endpoint may be a wireless receiver.
         internal static bool IsHecateG2II(string id) => id.StartsWith(@"USB\VID_2D99&PID_0026&MI_00\", StringComparison.OrdinalIgnoreCase);
 
+        private static readonly Guid KeyboardClass = new("4d36e96b-e325-11ce-bfc1-08002be10318");
+        private static readonly Guid MouseClass = new("4d36e96f-e325-11ce-bfc1-08002be10318");
+        private static readonly Regex UsbPhysicalId = new(@"^USB\\VID_[0-9A-F]{4}&PID_[0-9A-F]{4}\\[^\\]+$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        private static readonly DevPropKey BusDescriptionKey = new("540b947e-8b40-45bc-a8a2-6a0b894cbda2", 4);
+
+        internal static IEnumerable<BatteryDevice> ReadUsbKeyboards(CancellationToken token)
+        {
+            var mice = ReadUsbInputRoots(MouseClass, token);
+            return ReadUsbInputRoots(KeyboardClass, token)
+                .Where(k => !mice.ContainsKey(k.Key) && !IsKnownMouseUsbId(k.Key))
+                .Select(k => new BatteryDevice(k.Key, string.IsNullOrWhiteSpace(k.Value) ? L.T("USB keyboard", "USB-клавиатура") : k.Value,
+                    DeviceKind.Keyboard, true, null, DeviceTransport.UsbCable, usbPowered: true));
+        }
+
+        internal static bool IsPhysicalUsbId(string id) => id != null && UsbPhysicalId.IsMatch(id);
+        internal static bool IsKnownMouseUsbId(string id) => id.StartsWith(@"USB\VID_3554&PID_F52D\", StringComparison.OrdinalIgnoreCase)
+            || id.StartsWith(@"USB\VID_3554&PID_F52E\", StringComparison.OrdinalIgnoreCase)
+            || id.StartsWith(@"USB\VID_25A7&PID_FA4A\", StringComparison.OrdinalIgnoreCase);
+
+        private static Dictionary<string, string> ReadUsbInputRoots(Guid classId, CancellationToken token)
+        {
+            var devices = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            IntPtr set = SetupDiGetClassDevsByClass(ref classId, IntPtr.Zero, IntPtr.Zero, 0x02); // DIGCF_PRESENT
+            if (set == new IntPtr(-1)) return devices;
+            try
+            {
+                for (uint index = 0; ; index++)
+                {
+                    token.ThrowIfCancellationRequested();
+                    var node = new DevInfoData { Size = Marshal.SizeOf<DevInfoData>() };
+                    if (!SetupDiEnumDeviceInfo(set, index, ref node)) break;
+                    uint current = node.DevInst;
+                    var instance = new StringBuilder(512);
+                    for (int depth = 0; depth < 12; depth++)
+                    {
+                        instance.Clear();
+                        if (CM_Get_Device_IDW(current, instance, (uint)instance.Capacity, 0) != 0) break;
+                        string id = instance.ToString();
+                        if (IsPhysicalUsbId(id))
+                        {
+                            if (!devices.ContainsKey(id))
+                            {
+                                var key = BusDescriptionKey;
+                                var buffer = new byte[512];
+                                uint size = (uint)buffer.Length;
+                                string name = CM_Get_DevNode_PropertyW(current, ref key, out uint type, buffer, ref size, 0) == 0 && type == 0x12
+                                    ? Encoding.Unicode.GetString(buffer, 0, (int)size).TrimEnd('\0').Trim() : null;
+                                devices.Add(id, name);
+                            }
+                            break;
+                        }
+                        if (!id.StartsWith(@"HID\", StringComparison.OrdinalIgnoreCase) && !id.StartsWith(@"USB\", StringComparison.OrdinalIgnoreCase)) break;
+                        if (CM_Get_Parent(out uint parent, current, 0) != 0) break;
+                        current = parent;
+                    }
+                }
+            }
+            finally { SetupDiDestroyDeviceInfoList(set); }
+            return devices;
+        }
+
         internal static IReadOnlyList<BatteryDevice> ReadWiredHeadsets(CancellationToken token)
         {
             var rows = new List<BatteryDevice>();
@@ -319,6 +380,11 @@ namespace BlueGauge
 
         [DllImport("setupapi.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
         private static extern IntPtr SetupDiGetClassDevsW(IntPtr classGuid, string enumerator, IntPtr parent, uint flags);
+        [DllImport("setupapi.dll", EntryPoint = "SetupDiGetClassDevsW", ExactSpelling = true, SetLastError = true)]
+        private static extern IntPtr SetupDiGetClassDevsByClass(ref Guid classId, IntPtr enumerator, IntPtr parent, uint flags);
+        [DllImport("cfgmgr32.dll")] private static extern uint CM_Get_Parent(out uint parent, uint instance, uint flags);
+        [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)] private static extern uint CM_Get_Device_IDW(uint instance, StringBuilder id, uint length, uint flags);
+        [DllImport("cfgmgr32.dll", ExactSpelling = true)] private static extern uint CM_Get_DevNode_PropertyW(uint instance, ref DevPropKey key, out uint type, [Out] byte[] buffer, ref uint length, uint flags);
         [DllImport("setupapi.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool SetupDiEnumDeviceInfo(IntPtr set, uint index, ref DevInfoData info);

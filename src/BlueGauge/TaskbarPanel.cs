@@ -2,25 +2,28 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Drawing.Text;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace BlueGauge;
 
-// Windows 11 does not expose a taskbar-widget extension point for this area.
-// This is our own non-activating window over unused taskbar space, not an Explorer child.
+// An independent non-activating window over the unused taskbar area.
 internal sealed class TaskbarPanel : Form
 {
     private static readonly Color Surface = Color.FromArgb(18, 30, 46);
     private static readonly Color Good = Color.FromArgb(108, 224, 174);
     private static readonly Color Critical = Color.FromArgb(255, 137, 139);
-    private const int ItemWidth = 62, MoreWidth = 36, PaddingWidth = 14;
+    private const int EdgePadding = 8, Gap = 10, LabelOffset = 19;
     private readonly ToolTip tooltip = new();
     private readonly Action open;
     private BatteryDevice[] devices = [];
-    private int threshold, dpi = 96, visibleItems;
+    private int threshold;
+    private bool dirty = true;
     private Rectangle lastBounds;
+    private int lastDpi;
 
     internal TaskbarPanel(Action open, bool demo)
     {
@@ -31,9 +34,7 @@ internal sealed class TaskbarPanel : Form
         AutoScaleMode = AutoScaleMode.None;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
-        BackColor = Surface;
         Cursor = Cursors.Hand;
-        DoubleBuffered = true;
     }
 
     protected override bool ShowWithoutActivation => true;
@@ -42,7 +43,7 @@ internal sealed class TaskbarPanel : Form
         get
         {
             var parameters = base.CreateParams;
-            parameters.ExStyle |= 0x08000080; // WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW
+            parameters.ExStyle |= 0x08080080; // WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TOOLWINDOW
             return parameters;
         }
     }
@@ -50,9 +51,8 @@ internal sealed class TaskbarPanel : Form
     internal void UpdateDevices(BatteryDevice[] readings, int lowThreshold)
     {
         if (threshold == lowThreshold && devices.Length == readings.Length && devices.Zip(readings).All(pair =>
-            pair.First.Id == pair.Second.Id && pair.First.Name == pair.Second.Name && pair.First.Percent == pair.Second.Percent
-            && pair.First.Kind == pair.Second.Kind && pair.First.Charging == pair.Second.Charging
-            && pair.First.IsStale == pair.Second.IsStale && pair.First.UsbPowered == pair.Second.UsbPowered)) return;
+            pair.First.Id == pair.Second.Id && pair.First.Name == pair.Second.Name && pair.First.LevelText == pair.Second.LevelText
+            && pair.First.Kind == pair.Second.Kind && pair.First.Charging == pair.Second.Charging)) return;
         devices = readings;
         threshold = lowThreshold;
         string hint = string.Join("\n", devices.Select(d => d.Name + " · " + d.LevelText + (d.UsbPowered
@@ -60,74 +60,91 @@ internal sealed class TaskbarPanel : Form
             : d.Charging ? L.T(" (charging)", " (заряжается)") : "")));
         tooltip.SetToolTip(this, hint);
         AccessibleDescription = hint;
-        Invalidate();
+        dirty = true;
     }
 
-    internal static (int Width, int VisibleItems) Fit(int available, int dpi, int count)
+    internal static (int Width, int VisibleItems) Fit(int available, int padding, int gap, IReadOnlyList<int> widths, int overflowWidth)
     {
-        int pad = TaskbarPlacement.Scale(PaddingWidth, dpi);
-        int item = TaskbarPlacement.Scale(ItemWidth, dpi);
-        int more = TaskbarPlacement.Scale(MoreWidth, dpi);
-        if (count <= 0) return (0, 0);
-        int all = pad + item * count;
-        if (available >= all) return (all, count);
-        if (available < pad + more) return (0, 0);
-        int fit = Math.Max(0, (available - pad - more) / item);
-        return (pad + fit * item + more, fit);
+        if (widths.Count == 0) return (0, 0);
+        int all = padding + widths.Sum() + gap * (widths.Count - 1);
+        if (available >= all) return (all, widths.Count);
+        if (available < padding + overflowWidth) return (0, 0);
+        int width = padding + overflowWidth, fit = 0;
+        while (fit < widths.Count && width + gap + widths[fit] <= available)
+            width += gap + widths[fit++];
+        return (width, fit);
+    }
+
+    // A premultiplied alpha surface lets DWM blend the curved edge into the actual taskbar,
+    // including transparent corners. SetWindowRgn would reduce each pixel to in/out.
+    internal Bitmap RenderSurface(TaskbarSlot slot, out Rectangle bounds)
+    {
+        bounds = Rectangle.Empty;
+        int P(int unit) => TaskbarPlacement.Scale(unit, slot.Dpi);
+        var area = slot.Free;
+        int height = Math.Min(P(30), area.Height - 2);
+        if (height <= 6 || devices.Length == 0) return null;
+        float scale = slot.Dpi / 96f;
+        using var font = new Font("Segoe UI Semibold", 12f * scale, FontStyle.Regular, GraphicsUnit.Pixel);
+        using var measureImage = new Bitmap(1, 1, PixelFormat.Format32bppPArgb);
+        using var measuring = Graphics.FromImage(measureImage);
+        using var format = new StringFormat(StringFormat.GenericTypographic) { LineAlignment = StringAlignment.Center };
+        int Measure(string text) => (int)Math.Ceiling(measuring.MeasureString(text, font, PointF.Empty, format).Width) + 1;
+        var widths = devices.Select(d => P(LabelOffset) + Measure(d.LevelText)).ToArray();
+        var (width, fit) = Fit(area.Width, 2 * P(EdgePadding), P(Gap), widths, Measure("+" + new string('9', devices.Length.ToString().Length)));
+        if (width == 0) return null;
+        bounds = new Rectangle(area.Right - width, area.Top + (area.Height - height) / 2, width, height);
+        var image = new Bitmap(width, height, PixelFormat.Format32bppPArgb);
+        using var g = Graphics.FromImage(image);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+        g.Clear(Color.Transparent);
+        int radius = Math.Min(width - 2, height - 2) / 2;
+        using (var fill = new SolidBrush(Surface))
+            g.FillRounded(fill, new RectangleF(1, 1, width - 2, height - 2), radius);
+        using (var edge = new Pen(Palette.Border))
+            g.DrawRounded(edge, new RectangleF(1, 1, width - 2, height - 2), radius);
+        int x = P(EdgePadding);
+        for (int index = 0; index < fit; index++)
+        {
+            var d = devices[index];
+            Color color = d.Charging || d.UsbPowered ? Palette.Cyan : d.IsStale || d.Percent is not int level ? Palette.Muted
+                : level <= Math.Min(10, threshold) ? Critical : level <= threshold ? Palette.Low : Good;
+            Dashboard.DrawDevice(g, d.Kind, x + P(8), height / 2, scale, color);
+            using var ink = new SolidBrush(color);
+            g.DrawString(d.LevelText, font, ink, new RectangleF(x + P(LabelOffset), 0, widths[index] - P(LabelOffset) + 1, height), format);
+            x += widths[index] + P(Gap);
+        }
+        if (fit < devices.Length)
+        {
+            using var ink = new SolidBrush(Palette.Main);
+            g.DrawString("+" + (devices.Length - fit), font, ink, new RectangleF(x, 0, width - x, height), format);
+        }
+        return image;
     }
 
     internal void Place(TaskbarSlot slot)
     {
-        var area = slot.Free;
-        var (width, fit) = Fit(area.Width, slot.Dpi, devices.Length);
-        int height = Math.Min(TaskbarPlacement.Scale(30, slot.Dpi), area.Height - 2);
-        if (width == 0 || height <= 0) { Hide(); return; }
-        bool repaint = dpi != slot.Dpi || visibleItems != fit;
-        dpi = slot.Dpi;
-        visibleItems = fit;
-        var bounds = new Rectangle(area.Right - width, area.Top + (area.Height - height) / 2, width, height);
-        if (!Visible || bounds != lastBounds)
+        if (Visible && !dirty && lastDpi == slot.Dpi && lastBounds.Right == slot.Free.Right
+            && slot.Free.Contains(lastBounds) && lastBounds.Top == slot.Free.Top + (slot.Free.Height - lastBounds.Height) / 2
+            && lastFreeWidth == slot.Free.Width) return;
+        using var image = RenderSurface(slot, out var bounds);
+        if (image == null) { Hide(); return; }
+        if (!Visible)
         {
-            lastBounds = bounds;
-            SetWindowPos(Handle, new IntPtr(-1), bounds.X, bounds.Y, bounds.Width, bounds.Height, 0x0010); // TOPMOST, NOACTIVATE
-            using (var capsule = new GraphicsPath())
-            {
-                float diameter = Math.Min(Width, Height);
-                capsule.AddArc(0, 0, diameter, diameter, 90, 180);
-                capsule.AddArc(Width - diameter, 0, diameter, diameter, 270, 180);
-                capsule.CloseFigure();
-                Region = new Region(capsule); // Clip the actual HWND, including hit-testing, not just its paint.
-            }
-            if (!Visible) Show();
+            Bounds = bounds;
+            Show();
         }
-        if (repaint) Invalidate();
+        LayeredSurface.Present(Handle, bounds, image);
+        SetWindowPos(Handle, new IntPtr(-1), 0, 0, 0, 0, 0x0013); // TOPMOST, NOACTIVATE, NOMOVE, NOSIZE
+        lastBounds = bounds;
+        lastDpi = slot.Dpi;
+        lastFreeWidth = slot.Free.Width;
+        dirty = false;
     }
 
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        base.OnPaint(e);
-        var g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.Clear(Surface);
-        using var edge = new Pen(Palette.Border);
-        g.DrawRounded(edge, new RectangleF(.5f, .5f, Width - 2, Height - 2), (Height - 2) / 2f);
-        float scale = dpi / 96f;
-        int P(int unit) => TaskbarPlacement.Scale(unit, dpi);
-        int x = P(PaddingWidth) / 2;
-        using var font = new Font("Segoe UI Semibold", 12f * scale, FontStyle.Regular, GraphicsUnit.Pixel);
-        var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine;
-        foreach (var d in devices.Take(visibleItems))
-        {
-            Color color = d.Charging || d.UsbPowered ? Palette.Cyan : d.IsStale || d.Percent is not int level ? Palette.Muted
-                : level <= Math.Min(10, threshold) ? Critical : level <= threshold ? Palette.Low : Good;
-            Dashboard.DrawDevice(g, d.Kind, x + P(9), Height / 2, scale, color);
-            TextRenderer.DrawText(g, d.LevelText, font, new Rectangle(x + P(21), 0, P(ItemWidth - 21), Height), color, flags);
-            x += P(ItemWidth);
-        }
-        if (visibleItems < devices.Length)
-            TextRenderer.DrawText(g, "+" + (devices.Length - visibleItems), font, new Rectangle(x, 0, P(MoreWidth), Height),
-                Palette.Main, flags | TextFormatFlags.HorizontalCenter);
-    }
+    private int lastFreeWidth;
 
     protected override void OnMouseClick(MouseEventArgs e)
     {

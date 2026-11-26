@@ -19,6 +19,7 @@ namespace BlueGauge
         [DataMember] public int RefreshSeconds { get; set; } = 60;
         [DataMember] public bool Alerts { get; set; } = true;
         [DataMember] public bool TaskbarPanel { get; set; } = true;
+        [DataMember] public bool HideUsbCableDevices { get; set; }
 
         [OnDeserializing] private void SetDefaults(StreamingContext _) { LowThreshold = 20; RefreshSeconds = 60; Alerts = true; TaskbarPanel = true; }
 

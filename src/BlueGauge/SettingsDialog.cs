@@ -17,6 +17,7 @@ namespace BlueGauge
         private readonly CheckBox alerts;
         private readonly CheckBox startup;
         private readonly CheckBox taskbar;
+        private readonly CheckBox hideUsb;
         private readonly bool demo;
 
         internal SettingsDialog(Preferences settings, bool demo)
@@ -33,11 +34,11 @@ namespace BlueGauge
             BackColor = Palette.Back;
             ForeColor = Palette.Main;
             Font = Body;
-            ClientSize = new Size(400, 310);
-            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(20), ColumnCount = 2, RowCount = 7 };
+            ClientSize = new Size(430, 345);
+            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(20), ColumnCount = 2, RowCount = 8 };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65));
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35));
-            foreach (int height in new[] { 40, 34, 34, 34, 34, 34, 38 }) layout.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
+            foreach (int height in new[] { 40, 34, 34, 34, 34, 34, 34, 38 }) layout.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
             Controls.Add(layout);
 
             var heading = new Label { Text = L.T("Preferences", "Параметры"), Font = Heading, Dock = DockStyle.Fill };
@@ -62,6 +63,9 @@ namespace BlueGauge
             taskbar = new CheckBox { Text = L.T("Show battery panel by Start (Windows 11)", "Показывать заряд у кнопки «Пуск» (Windows 11)"),
                 Checked = settings.TaskbarPanel, Dock = DockStyle.Fill, Enabled = OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) };
             AddWide(layout, taskbar, 5);
+            hideUsb = new CheckBox { Text = L.T("Hide wired USB devices", "Скрывать проводные USB-устройства"),
+                Checked = settings.HideUsbCableDevices, Dock = DockStyle.Fill };
+            AddWide(layout, hideUsb, 6);
             var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Fill, WrapContents = false };
             var ok = ActionButton(L.T("Save", "Сохранить"));
             ok.Click += Save;
@@ -69,14 +73,15 @@ namespace BlueGauge
             cancel.DialogResult = DialogResult.Cancel;
             buttons.Controls.Add(ok);
             buttons.Controls.Add(cancel);
-            AddWide(layout, buttons, 6);
+            AddWide(layout, buttons, 7);
             AcceptButton = ok;
             CancelButton = cancel;
         }
 
         private void Save(object sender, EventArgs e)
         {
-            var next = new Preferences { LowThreshold = (int)threshold.Value, RefreshSeconds = Intervals[interval.SelectedIndex], Alerts = alerts.Checked, TaskbarPanel = taskbar.Checked };
+            var next = new Preferences { LowThreshold = (int)threshold.Value, RefreshSeconds = Intervals[interval.SelectedIndex], Alerts = alerts.Checked,
+                TaskbarPanel = taskbar.Checked, HideUsbCableDevices = hideUsb.Checked };
             if (!demo)
             {
                 try
@@ -95,6 +100,7 @@ namespace BlueGauge
             settings.RefreshSeconds = next.RefreshSeconds;
             settings.Alerts = next.Alerts;
             settings.TaskbarPanel = next.TaskbarPanel;
+            settings.HideUsbCableDevices = next.HideUsbCableDevices;
             DialogResult = DialogResult.OK;
         }
 

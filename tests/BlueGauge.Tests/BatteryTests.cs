@@ -11,7 +11,7 @@ namespace BlueGauge.Tests
         private static int Main(string[] args)
         {
             if (args.Contains("--hid")) { LiveHid(); return 0; }
-            var checks = new List<Action> { Levels, LowestKnown, AlertHysteresis, AlertIndependence, Normalize, Demo, TrayIcon, VisibleReadings, HidFrames, LastReadings, WiredHeadset, TaskbarSpace, TaskbarCapacity };
+            var checks = new List<Action> { Levels, LowestKnown, AlertHysteresis, AlertIndependence, Normalize, Demo, TrayIcon, VisibleReadings, HidFrames, LastReadings, WiredHeadset, UsbKeyboard, UsbVisibility, TaskbarSpace, TaskbarCapacity, TaskbarSurface };
             if (args.Contains("--live")) { checks.Add(Live); checks.Add(LiveHid); checks.Add(LiveTaskbar); }
             int failures = 0;
             foreach (var check in checks)
@@ -141,11 +141,27 @@ namespace BlueGauge.Tests
 
         private static void TaskbarCapacity()
         {
-            Equal((262, 4), TaskbarPanel.Fit(337, 96, 4));
-            Equal((174, 2), TaskbarPanel.Fit(200, 96, 4));
-            Equal((50, 0), TaskbarPanel.Fit(52, 96, 4));
-            Equal((0, 0), TaskbarPanel.Fit(40, 96, 4));
-            Equal((330, 4), TaskbarPanel.Fit(350, 120, 4));
+            int[] widths = [39, 42, 31, 48];
+            Equal((206, 4), TaskbarPanel.Fit(230, 16, 10, widths, 20));
+            Equal((137, 2), TaskbarPanel.Fit(150, 16, 10, widths, 20));
+            Equal((36, 0), TaskbarPanel.Fit(50, 16, 10, widths, 20));
+            Equal((0, 0), TaskbarPanel.Fit(35, 16, 10, widths, 20));
+        }
+
+        private static void TaskbarSurface()
+        {
+            using var panel = new TaskbarPanel(() => { }, true);
+            var slot = new TaskbarSlot(new System.Drawing.Rectangle(0, 0, 400, 60), 120);
+            panel.UpdateDevices(new[] { Device(55) }, 20);
+            using var single = panel.RenderSurface(slot, out var narrow);
+            panel.UpdateDevices(new[] { Device(55), Device(5, id: "second") }, 20);
+            using var twice = panel.RenderSurface(slot, out var wide);
+            Equal(true, wide.Width > narrow.Width);
+            Equal(slot.Free.Right, wide.Right);
+            Equal((byte)0, twice.GetPixel(0, 0).A);
+            Equal((byte)255, twice.GetPixel(twice.Width / 2, twice.Height / 2).A);
+            Equal(true, Enumerable.Range(0, twice.Height / 2).Any(y =>
+                Enumerable.Range(0, twice.Height / 2).Any(x => twice.GetPixel(x, y).A is > 0 and < 255)));
         }
 
         private static void LiveTaskbar()
@@ -157,15 +173,14 @@ namespace BlueGauge.Tests
             using var panel = new TaskbarPanel(() => { }, true);
             panel.UpdateDevices(new[] { Device(55), Device(null, id: "unknown") }, 20);
             panel.Place(slot.Value);
-            if (TaskbarPanel.Fit(slot.Value.Free.Width, slot.Value.Dpi, 2).Width == 0) return;
+            using var image = panel.RenderSurface(slot.Value, out var expected);
+            if (image == null) return;
             Equal(true, panel.Visible);
+            Equal(expected, panel.Bounds);
             var bar = slot.Value.Free;
             Equal(bar.Right, panel.Bounds.Right);
             Equal(true, bar.Contains(panel.Bounds));
-            Equal(false, panel.Region.IsVisible(0, 0));
-            Equal(true, panel.Region.IsVisible(panel.Width / 2, panel.Height / 2));
-            using var image = new System.Drawing.Bitmap(panel.Width, panel.Height);
-            panel.DrawToBitmap(image, panel.ClientRectangle);
+            Equal((byte)0, image.GetPixel(0, 0).A);
             Console.WriteLine($"  Panel rendered at {panel.Bounds}.");
         }
 
@@ -190,6 +205,27 @@ namespace BlueGauge.Tests
             var headset = new BatteryDevice("wired", "HECATE G2 II", DeviceKind.Headphones, true, 100, DeviceTransport.UsbCable, usbPowered: true);
             Equal("USB", headset.LevelText);
             Equal(null, headset.Percent);
+        }
+
+        private static void UsbKeyboard()
+        {
+            Equal(true, PnpBatteryReader.IsPhysicalUsbId(@"USB\VID_1A2C&PID_4B81\parent"));
+            Equal(false, PnpBatteryReader.IsPhysicalUsbId(@"USB\VID_1A2C&PID_4B81&MI_00\child"));
+            Equal(false, PnpBatteryReader.IsPhysicalUsbId(@"HID\VID_1A2C&PID_4B81&MI_01&COL04\child"));
+            Equal(true, PnpBatteryReader.IsKnownMouseUsbId(@"USB\VID_3554&PID_F52D\receiver"));
+        }
+
+        private static void UsbVisibility()
+        {
+            var devices = new[] {
+                Device(90, id: "bluetooth"),
+                new BatteryDevice("receiver", "Mouse", DeviceKind.Mouse, true, 50, DeviceTransport.UsbReceiver),
+                new BatteryDevice("wired", "Keyboard", DeviceKind.Keyboard, true, null, DeviceTransport.UsbCable, usbPowered: true)
+            };
+            Equal(3, BatteryMetrics.VisibleDevices(devices).Length);
+            var filtered = BatteryMetrics.VisibleDevices(devices, true);
+            Equal(2, filtered.Length);
+            Equal(true, filtered.Any(d => d.Transport == DeviceTransport.UsbReceiver));
         }
 
         private static void HidFrames()

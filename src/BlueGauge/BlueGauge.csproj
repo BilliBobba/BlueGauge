@@ -9,7 +9,7 @@
     <ApplicationIcon>..\..\assets\BlueGauge.ico</ApplicationIcon>
     <AssemblyTitle>BlueGauge</AssemblyTitle>
     <Description>Bluetooth and USB battery dashboard for Windows</Description>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <PublishTrimmed>false</PublishTrimmed>
     <!-- UI Automation loads the mixed-mode DirectWriteForwarder assembly from disk.
          With native-only extraction, the standalone app fails during UIA initialization. -->

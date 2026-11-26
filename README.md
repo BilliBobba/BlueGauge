@@ -14,7 +14,7 @@ The tray displays the lowest known level. The dashboard lists connected devices 
 
 ### Taskbar panel (Windows 11)
 
-With **centered** taskbar alignment, BlueGauge displays a compact panel just left of Start on the primary taskbar. It shows one icon and percentage per connected device. When space runs out, `+N` counts the remaining devices; hover for the full list or click to open the dashboard. You can turn the panel off in BlueGauge settings. Windows 11 has no supported insertion point there: the panel is a separate window over free taskbar space, so it hides when there is no room, when the taskbar is hidden, or in fullscreen. The tray icon continues to work.
+With **centered** taskbar alignment, BlueGauge displays a compact panel just left of Start on the primary taskbar. It shows one icon and percentage per connected device. When space runs out, `+N` counts the remaining devices; hover for the full list or click to open the dashboard. The panel fits its width to the icons and text. In BlueGauge settings, you can turn the panel off or hide wired USB devices in both views without hiding mice on 2.4 GHz receivers. Windows 11 has no supported insertion point there: the panel is a separate window over free taskbar space, so it hides when there is no room, when the taskbar is hidden, or in fullscreen. The tray icon continues to work.
 
 ## Device support
 
@@ -24,6 +24,7 @@ With **centered** taskbar alignment, BlueGauge displays a compact panel just lef
 | ARDOR GAMING Phantom PRO V2 (`3554:F52E`) | USB cable, ID confirmed in the vendor config; hardware reading not verified | Every 2 seconds |
 | ARDOR GAMING Renegade (`25A7:FA4A`) | 2.4 GHz USB receiver; BatteryTray report and sample frame, not tested on this PC | Every 2 seconds; the mouse reports in 10% steps |
 | Accessories exposing battery to Windows or via standard BLE GATT | Bluetooth Classic / BLE | Configurable: 30, 60 or 120 seconds |
+| USB keyboards and wired HECATE G2 II | USB cable; `USB` status, no battery reading | Every 2 seconds |
 
 The USB provider sends battery and link-status queries on known HID collections. A sleeping mouse stays on the panel while its supported receiver is plugged in. `*` marks the last known percentage (not a fresh reading); `—` means no reading has been received. A Bluetooth device requires a confirmed connection. The wired HECATE G2 II shows `USB`, not a battery percentage. Other ARDOR models and USB receivers are not implied to work. See [hardware checks](docs/testing.md) for verification steps.
 

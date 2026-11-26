@@ -154,7 +154,7 @@ namespace BlueGauge
         private void Render()
         {
             var devices = lastReadings.Update(hidRows.Concat(bluetoothRows));
-            var active = activeRows = BatteryMetrics.VisibleDevices(devices);
+            var active = activeRows = BatteryMetrics.VisibleDevices(devices, settings.HideUsbCableDevices);
             window.UpdateDevices(active, updatedAt, settings.LowThreshold, hidError ?? (active.Length == 0 ? bluetoothError : null));
             UpdateTaskbarPanel(active);
             int? percent = BatteryMetrics.Lowest(active)?.Percent;
@@ -168,7 +168,8 @@ namespace BlueGauge
                 iconThreshold = settings.LowThreshold;
             }
             tray.Text = "BlueGauge" + (demo ? " · Demo" : "") + (percent.HasValue ? " · " + percent + "%" : "");
-            var low = alerts.Update(devices, settings.LowThreshold, settings.Alerts && !demo);
+            var alertDevices = settings.HideUsbCableDevices ? devices.Where(d => d.Transport != DeviceTransport.UsbCable) : devices;
+            var low = alerts.Update(alertDevices, settings.LowThreshold, settings.Alerts && !demo);
             if (low.Count == 0) return;
             string list = string.Join("\n", low.Take(4).Select(d => d.Name + " — " + d.Percent + "%"));
             if (low.Count > 4) list += "\n+" + (low.Count - 4);
