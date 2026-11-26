@@ -11,6 +11,10 @@
     <Description>Bluetooth and USB battery dashboard for Windows</Description>
     <Version>1.1.0</Version>
     <PublishTrimmed>false</PublishTrimmed>
+    <!-- UI Automation loads the mixed-mode DirectWriteForwarder assembly from disk.
+         With native-only extraction, the standalone app fails during UIA initialization. -->
+    <IncludeAllContentForSelfExtract Condition="'$(PublishSingleFile)' == 'true'">true</IncludeAllContentForSelfExtract>
+    <NoWarn Condition="'$(PublishSingleFile)' == 'true'">$(NoWarn);NETSDK1244</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />

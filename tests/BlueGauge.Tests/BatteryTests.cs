@@ -11,7 +11,7 @@ namespace BlueGauge.Tests
         private static int Main(string[] args)
         {
             if (args.Contains("--hid")) { LiveHid(); return 0; }
-            var checks = new List<Action> { Levels, LowestKnown, AlertHysteresis, AlertIndependence, Normalize, Demo, TrayIcon, VisibleReadings, HidFrames, TaskbarSpace, TaskbarCapacity };
+            var checks = new List<Action> { Levels, LowestKnown, AlertHysteresis, AlertIndependence, Normalize, Demo, TrayIcon, VisibleReadings, HidFrames, LastReadings, WiredHeadset, TaskbarSpace, TaskbarCapacity };
             if (args.Contains("--live")) { checks.Add(Live); checks.Add(LiveHid); checks.Add(LiveTaskbar); }
             int failures = 0;
             foreach (var check in checks)
@@ -110,8 +110,8 @@ namespace BlueGauge.Tests
             {
                 var reader = new HidBatterySource();
                 var rows = reader.Read(token.Token, Console.WriteLine);
-                foreach (var row in rows) Console.WriteLine("  {0}: {1}% ({2}, charging: {3})", row.Name, row.Percent, row.Transport, row.Charging);
-                Console.WriteLine("  {0} supported USB device(s) answered.", rows.Count);
+                foreach (var row in rows) Console.WriteLine("  {0}: {1} ({2}, charging: {3})", row.Name, row.LevelText, row.Transport, row.Charging);
+                Console.WriteLine("  {0} supported USB device(s) present; {1} reported battery level.", rows.Count, rows.Count(d => d.Percent.HasValue));
                 Equal(rows.Count, rows.Select(r => r.Id).Distinct().Count());
             }
         }
@@ -141,11 +141,11 @@ namespace BlueGauge.Tests
 
         private static void TaskbarCapacity()
         {
-            Equal((226, 4), TaskbarPanel.Fit(337, 96, 4));
-            Equal((154, 2), TaskbarPanel.Fit(200, 96, 4));
-            Equal((46, 0), TaskbarPanel.Fit(52, 96, 4));
+            Equal((262, 4), TaskbarPanel.Fit(337, 96, 4));
+            Equal((174, 2), TaskbarPanel.Fit(200, 96, 4));
+            Equal((50, 0), TaskbarPanel.Fit(52, 96, 4));
             Equal((0, 0), TaskbarPanel.Fit(40, 96, 4));
-            Equal((284, 4), TaskbarPanel.Fit(350, 120, 4));
+            Equal((330, 4), TaskbarPanel.Fit(350, 120, 4));
         }
 
         private static void LiveTaskbar()
@@ -162,9 +162,34 @@ namespace BlueGauge.Tests
             var bar = slot.Value.Free;
             Equal(bar.Right, panel.Bounds.Right);
             Equal(true, bar.Contains(panel.Bounds));
+            Equal(false, panel.Region.IsVisible(0, 0));
+            Equal(true, panel.Region.IsVisible(panel.Width / 2, panel.Height / 2));
             using var image = new System.Drawing.Bitmap(panel.Width, panel.Height);
             panel.DrawToBitmap(image, panel.ClientRectangle);
             Console.WriteLine($"  Panel rendered at {panel.Bounds}.");
+        }
+
+        private static void LastReadings()
+        {
+            var cache = new LastBatteryReadings();
+            BatteryDevice Receiver(int? percent) => new BatteryDevice("mouse", "Mouse", DeviceKind.Mouse, true, percent, DeviceTransport.UsbReceiver);
+            Equal("—", cache.Update(new[] { Receiver(null) })[0].LevelText);
+            Equal("15%", cache.Update(new[] { Receiver(15) })[0].LevelText);
+            var last = cache.Update(new[] { Receiver(null) });
+            Equal("15%*", last[0].LevelText);
+            Equal(0, new LowBatteryTracker().Update(last, 20, true).Count);
+            Equal("50%", cache.Update(new[] { Receiver(50) })[0].LevelText);
+            Equal(0, cache.Update(Array.Empty<BatteryDevice>()).Length);
+            Equal("—", cache.Update(new[] { Receiver(null) })[0].LevelText);
+        }
+
+        private static void WiredHeadset()
+        {
+            Equal(true, PnpBatteryReader.IsHecateG2II(@"USB\VID_2D99&PID_0026&MI_00\interface"));
+            Equal(false, PnpBatteryReader.IsHecateG2II(@"USB\VID_2D99&PID_0026&MI_03\interface"));
+            var headset = new BatteryDevice("wired", "HECATE G2 II", DeviceKind.Headphones, true, 100, DeviceTransport.UsbCable, usbPowered: true);
+            Equal("USB", headset.LevelText);
+            Equal(null, headset.Percent);
         }
 
         private static void HidFrames()

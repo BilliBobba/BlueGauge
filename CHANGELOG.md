@@ -5,6 +5,9 @@
 - Added an optional Windows 11 battery panel to the left of the centered Start button.
 - Connected devices without a battery percentage are shown with a dash; disconnected pairings stay hidden.
 - The taskbar panel uses a `+N` indicator and a full device tooltip when space is limited.
+- Fixed taskbar detection in the published single-file executable and rounded the panel's window shape.
+- Ignore stale Bluetooth connection flags; identify the wired HECATE G2 II as USB-powered.
+- Keep sleeping mice visible while their receiver is plugged in and mark the last known percentage with `*`.
 
 ## 1.1.0
 

@@ -19,9 +19,12 @@ namespace BlueGauge
         internal int? Percent { get; }
         internal DeviceTransport Transport { get; }
         internal bool Charging { get; }
+        internal bool UsbPowered { get; }
+        internal bool IsStale { get; }
+        internal string LevelText => UsbPowered ? "USB" : Percent is int level ? level + "%" + (IsStale ? "*" : "") : "—";
 
         internal BatteryDevice(string id, string name, DeviceKind kind, bool connected, int? percent,
-            DeviceTransport transport = DeviceTransport.Bluetooth, bool charging = false)
+            DeviceTransport transport = DeviceTransport.Bluetooth, bool charging = false, bool usbPowered = false, bool isStale = false)
         {
             Id = id;
             Name = name;
@@ -29,7 +32,9 @@ namespace BlueGauge
             Connected = connected;
             Transport = transport;
             Charging = connected && charging;
-            Percent = connected && percent.HasValue && percent.Value >= 0 && percent.Value <= 100 ? percent : null;
+            UsbPowered = connected && usbPowered;
+            Percent = connected && !usbPowered && percent.HasValue && percent.Value >= 0 && percent.Value <= 100 ? percent : null;
+            IsStale = Percent.HasValue && isStale;
         }
     }
 
@@ -69,6 +74,30 @@ namespace BlueGauge
             .ThenBy(d => d.Id, StringComparer.Ordinal).FirstOrDefault();
     }
 
+    // Preserve last readings only while the same connection is still present.
+    internal sealed class LastBatteryReadings
+    {
+        private readonly Dictionary<(string, DeviceTransport), int> last = new();
+
+        internal BatteryDevice[] Update(IEnumerable<BatteryDevice> devices)
+        {
+            var rows = new List<BatteryDevice>();
+            var present = new HashSet<(string, DeviceTransport)>();
+            foreach (var device in devices)
+            {
+                if (!device.Connected || device.UsbPowered) { rows.Add(device); continue; }
+                var key = (device.Id, device.Transport);
+                present.Add(key);
+                if (device.Percent is int fresh && !device.IsStale) last[key] = fresh;
+                if (!device.Percent.HasValue && last.TryGetValue(key, out var level))
+                    rows.Add(new BatteryDevice(device.Id, device.Name, device.Kind, true, level, device.Transport, isStale: true));
+                else rows.Add(device);
+            }
+            foreach (var key in last.Keys.Where(key => !present.Contains(key)).ToArray()) last.Remove(key);
+            return rows.ToArray();
+        }
+    }
+
     internal sealed class LowBatteryTracker
     {
         private readonly HashSet<string> notified = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -80,7 +109,7 @@ namespace BlueGauge
             foreach (var device in devices)
             {
                 present.Add(device.Id);
-                if (!device.Connected || !device.Percent.HasValue) continue;
+                if (!device.Connected || device.IsStale || !device.Percent.HasValue) continue;
                 if (device.Percent.Value >= Math.Min(100, threshold + 5)) notified.Remove(device.Id);
                 if (enabled && device.Percent.Value <= threshold && notified.Add(device.Id)) alerts.Add(device);
             }

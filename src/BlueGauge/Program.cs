@@ -23,6 +23,19 @@ namespace BlueGauge
                 return;
             }
 
+            if (args.Length >= 2 && args[0] == "--taskbar-diagnostic")
+            {
+                string result;
+                try
+                {
+                    var slot = System.Threading.Tasks.Task.Run(TaskbarPlacement.Probe).GetAwaiter().GetResult();
+                    result = slot.HasValue ? $"Free slot: {slot.Value.Free}; DPI: {slot.Value.Dpi}" : "No usable slot was found.";
+                }
+                catch (Exception ex) { result = ex.ToString(); Environment.ExitCode = 1; }
+                File.WriteAllText(Path.GetFullPath(args[1]), result);
+                return;
+            }
+
             bool demo = args.Contains("--demo");
             string instance = (demo ? @"Local\BlueGauge.Demo." : @"Local\BlueGauge.Live.")
                 + System.Security.Principal.WindowsIdentity.GetCurrent().User.Value;

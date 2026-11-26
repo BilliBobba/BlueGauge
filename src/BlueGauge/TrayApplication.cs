@@ -18,6 +18,8 @@ namespace BlueGauge
         private readonly System.Windows.Forms.Timer hidTimer;
         private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
         private readonly LowBatteryTracker alerts = new LowBatteryTracker();
+        private readonly LastBatteryReadings lastReadings = new();
+        private BatteryDevice[] activeRows = [];
         private readonly IBatterySource bluetooth;
         private readonly HidBatterySource hid = new HidBatterySource();
         private readonly System.Windows.Forms.Timer taskbarTimer;
@@ -151,8 +153,8 @@ namespace BlueGauge
 
         private void Render()
         {
-            var devices = hidRows.Concat(bluetoothRows).ToArray();
-            var active = BatteryMetrics.VisibleDevices(devices);
+            var devices = lastReadings.Update(hidRows.Concat(bluetoothRows));
+            var active = activeRows = BatteryMetrics.VisibleDevices(devices);
             window.UpdateDevices(active, updatedAt, settings.LowThreshold, hidError ?? (active.Length == 0 ? bluetoothError : null));
             UpdateTaskbarPanel(active);
             int? percent = BatteryMetrics.Lowest(active)?.Percent;
@@ -198,7 +200,7 @@ namespace BlueGauge
                 var slot = await Task.Run(TaskbarPlacement.Probe);
                 if (stopping || !settings.TaskbarPanel) return;
                 taskbarSlot = slot;
-                UpdateTaskbarPanel(BatteryMetrics.VisibleDevices(hidRows.Concat(bluetoothRows)));
+                UpdateTaskbarPanel(activeRows);
             }
             catch (Exception ex)
             {

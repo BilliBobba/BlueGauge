@@ -15,7 +15,7 @@ internal sealed class TaskbarPanel : Form
     private static readonly Color Surface = Color.FromArgb(18, 30, 46);
     private static readonly Color Good = Color.FromArgb(108, 224, 174);
     private static readonly Color Critical = Color.FromArgb(255, 137, 139);
-    private const int ItemWidth = 54, MoreWidth = 36, PaddingWidth = 10;
+    private const int ItemWidth = 62, MoreWidth = 36, PaddingWidth = 14;
     private readonly ToolTip tooltip = new();
     private readonly Action open;
     private BatteryDevice[] devices = [];
@@ -51,11 +51,13 @@ internal sealed class TaskbarPanel : Form
     {
         if (threshold == lowThreshold && devices.Length == readings.Length && devices.Zip(readings).All(pair =>
             pair.First.Id == pair.Second.Id && pair.First.Name == pair.Second.Name && pair.First.Percent == pair.Second.Percent
-            && pair.First.Kind == pair.Second.Kind && pair.First.Charging == pair.Second.Charging)) return;
+            && pair.First.Kind == pair.Second.Kind && pair.First.Charging == pair.Second.Charging
+            && pair.First.IsStale == pair.Second.IsStale && pair.First.UsbPowered == pair.Second.UsbPowered)) return;
         devices = readings;
         threshold = lowThreshold;
-        string hint = string.Join("\n", devices.Select(d => d.Name + " · " + FormatLevel(d)
-            + (d.Charging ? L.T(" (charging)", " (заряжается)") : "")));
+        string hint = string.Join("\n", devices.Select(d => d.Name + " · " + d.LevelText + (d.UsbPowered
+            ? L.T(" (USB power)", " (питание от USB)") : d.IsStale ? L.T(" (last reading)", " (последнее показание)")
+            : d.Charging ? L.T(" (charging)", " (заряжается)") : "")));
         tooltip.SetToolTip(this, hint);
         AccessibleDescription = hint;
         Invalidate();
@@ -88,12 +90,18 @@ internal sealed class TaskbarPanel : Form
         {
             lastBounds = bounds;
             SetWindowPos(Handle, new IntPtr(-1), bounds.X, bounds.Y, bounds.Width, bounds.Height, 0x0010); // TOPMOST, NOACTIVATE
+            using (var capsule = new GraphicsPath())
+            {
+                float diameter = Math.Min(Width, Height);
+                capsule.AddArc(0, 0, diameter, diameter, 90, 180);
+                capsule.AddArc(Width - diameter, 0, diameter, diameter, 270, 180);
+                capsule.CloseFigure();
+                Region = new Region(capsule); // Clip the actual HWND, including hit-testing, not just its paint.
+            }
             if (!Visible) Show();
         }
         if (repaint) Invalidate();
     }
-
-    private static string FormatLevel(BatteryDevice d) => d.Percent is int value ? value + "%" : "—";
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -102,7 +110,7 @@ internal sealed class TaskbarPanel : Form
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(Surface);
         using var edge = new Pen(Palette.Border);
-        g.DrawRounded(edge, new RectangleF(.5f, .5f, Width - 2, Height - 2), TaskbarPlacement.Scale(6, dpi));
+        g.DrawRounded(edge, new RectangleF(.5f, .5f, Width - 2, Height - 2), (Height - 2) / 2f);
         float scale = dpi / 96f;
         int P(int unit) => TaskbarPlacement.Scale(unit, dpi);
         int x = P(PaddingWidth) / 2;
@@ -110,10 +118,10 @@ internal sealed class TaskbarPanel : Form
         var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine;
         foreach (var d in devices.Take(visibleItems))
         {
-            Color color = d.Charging ? Palette.Cyan : d.Percent is not int level ? Palette.Muted
+            Color color = d.Charging || d.UsbPowered ? Palette.Cyan : d.IsStale || d.Percent is not int level ? Palette.Muted
                 : level <= Math.Min(10, threshold) ? Critical : level <= threshold ? Palette.Low : Good;
             Dashboard.DrawDevice(g, d.Kind, x + P(9), Height / 2, scale, color);
-            TextRenderer.DrawText(g, FormatLevel(d), font, new Rectangle(x + P(21), 0, P(ItemWidth - 21), Height), color, flags);
+            TextRenderer.DrawText(g, d.LevelText, font, new Rectangle(x + P(21), 0, P(ItemWidth - 21), Height), color, flags);
             x += P(ItemWidth);
         }
         if (visibleItems < devices.Length)

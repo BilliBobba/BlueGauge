@@ -86,6 +86,7 @@ namespace BlueGauge
                     diagnostic?.Invoke($"  {profile.UsbId} HID {c.Page:X4}:{c.Usage:X4} in/out/feature={c.Input}/{c.Output}/{c.Feature}");
                 var writers = matches.Where(c => c.Page == 0xff02 && c.Usage == 2 && (profile.Split
                     ? c.Feature == OemMouseBattery.FrameSize : c.Input == OemMouseBattery.FrameSize && c.Output == OemMouseBattery.FrameSize));
+                bool found = false;
                 foreach (var writer in writers)
                 {
                     var reader = profile.Split ? matches.FirstOrDefault(c => c.Input == OemMouseBattery.FrameSize && c.Page == 0xff01
@@ -94,11 +95,16 @@ namespace BlueGauge
                     try
                     {
                         var row = Query(profile, writer, reader, token, diagnostic);
-                        if (row != null) { rows.Add(row); break; }
+                        if (row != null) { rows.Add(row); found = true; break; }
                     }
                     catch (Win32Exception ex) { diagnostic?.Invoke("  HID error " + ex.NativeErrorCode); }
                 }
+                // A plugged-in known receiver remains on the panel while its mouse sleeps.
+                // Do not mark an adapter visible merely from a generic HID vendor ID.
+                if (!found && profile.Receiver && writers.Any())
+                    rows.Add(new BatteryDevice(profile.Key, profile.Name, DeviceKind.Mouse, true, null, profile.Transport));
             }
+            rows.AddRange(PnpBatteryReader.ReadWiredHeadsets(token));
             return rows;
         }
 

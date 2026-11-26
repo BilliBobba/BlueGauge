@@ -25,7 +25,7 @@ With **centered** taskbar alignment, BlueGauge displays a compact panel just lef
 | ARDOR GAMING Renegade (`25A7:FA4A`) | 2.4 GHz USB receiver; BatteryTray report and sample frame, not tested on this PC | Every 2 seconds; the mouse reports in 10% steps |
 | Accessories exposing battery to Windows or via standard BLE GATT | Bluetooth Classic / BLE | Configurable: 30, 60 or 120 seconds |
 
-The USB provider sends battery and link-status queries on known HID collections. Updates reflect the percentage the device reports, not an estimate; a sleeping or disconnected mouse may stop answering. Other ARDOR models and USB receivers are not implied to work. See [hardware checks](docs/testing.md) for verification steps.
+The USB provider sends battery and link-status queries on known HID collections. A sleeping mouse stays on the panel while its supported receiver is plugged in. `*` marks the last known percentage (not a fresh reading); `—` means no reading has been received. A Bluetooth device requires a confirmed connection. The wired HECATE G2 II shows `USB`, not a battery percentage. Other ARDOR models and USB receivers are not implied to work. See [hardware checks](docs/testing.md) for verification steps.
 
 ## Demo, build and tests
 

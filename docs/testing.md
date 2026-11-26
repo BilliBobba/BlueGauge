@@ -9,14 +9,18 @@ Use `-Live` to also exercise Windows Bluetooth discovery and the USB HID reader.
 | Scenario | Expected outcome |
 | --- | --- |
 | Active Phantom PRO V2 through USB receiver `3554:F52D` | A single card marked **2.4 GHz receiver** appears. The app requests the level every two seconds; compare with the vendor percentage while the mouse is awake. |
-| Switch off the mouse or unplug the receiver | The card and its contribution to the tray number disappear after a poll; a sleeping mouse may return after movement. |
+| The mouse sleeps or stops answering but its receiver is still plugged in | The card remains and the last known percentage has `*`. It updates after movement. A receiver seen for the first time has `—` until the mouse answers. |
+| Unplug the USB receiver | Its card and cached percentage are cleared after a poll. |
+| Plug or unplug the wired HECATE G2 II | Its card appears as `USB` while present; it does not show a battery percentage. |
 | Phantom connected by cable `3554:F52E` | The cable profile is tried before its receiver, so only one Phantom card can be shown. This connection still needs hardware verification. |
 | Renegade through `25A7:FA4A` | Compatible firmware should report in increments of ten. This profile is based on the sample in BatteryTray issue #18; it has not been tested on a physical Renegade in BlueGauge. |
 | Bluetooth device is only paired or disconnected | It does not appear. A connected device without a percentage appears with a dash. |
 | Windows 11 with centered taskbar icons and a supported connected device | The battery panel appears in unused space left of Start without covering Widgets. Hover for the full list, or click to open BlueGauge. |
 | The taskbar is hidden, Start is aligned to the left, or an app covers the primary display fullscreen | The panel hides; the tray remains available when Windows shows it. |
 | A connected Bluetooth device reports a level through Windows or BLE GATT | It is shown once with its actual percentage. |
-| Close with the custom × and open again from the tray | The dashboard is hidden, monitoring continues, and reopening does not start another instance. |
+| Close the dashboard in the published single-file EXE with the custom × | The dashboard hides, the round taskbar panel remains visible, and monitoring continues. |
+
+The build script also starts the published executable with `--taskbar-diagnostic <report-path>` to catch UI Automation loading failures missed by project-level tests.
 
 ## Comparing with the ARDOR utility
 

@@ -119,7 +119,7 @@ namespace BlueGauge
         {
             var visible = BatteryMetrics.VisibleDevices(devices);
             caption.Text = L.T("Active devices: ", "Активных устройств: ") + visible.Length;
-            string current = threshold + ":" + string.Join("\n", visible.Select(d => $"{d.Id}|{d.Name}|{d.Kind}|{d.Transport}|{d.Percent}|{d.Charging}"));
+            string current = threshold + ":" + string.Join("\n", visible.Select(d => $"{d.Id}|{d.Name}|{d.Kind}|{d.Transport}|{d.LevelText}|{d.Charging}"));
             if (!string.Equals(current, signature, StringComparison.Ordinal))
             {
                 signature = current;
@@ -245,9 +245,11 @@ namespace BlueGauge
                 SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
                 string connection = d.Transport == DeviceTransport.UsbReceiver ? L.T("2.4 GHz receiver", "Донгл 2,4 ГГц")
                     : d.Transport == DeviceTransport.UsbCable ? L.T("USB cable", "USB-кабель") : "Bluetooth";
-                detail = connection + (d.Charging ? L.T("  ·  Charging", "  ·  Заряжается") : "");
+                detail = connection + (d.UsbPowered ? L.T("  ·  USB power", "  ·  Питание USB") : d.IsStale
+                    ? L.T("  ·  Last reading", "  ·  Последнее показание")
+                    : d.Charging ? L.T("  ·  Charging", "  ·  Заряжается") : "");
                 AccessibleRole = AccessibleRole.StaticText;
-                AccessibleName = d.Name + ", " + detail + (d.Percent.HasValue ? ", " + d.Percent.Value + "%" : "");
+                AccessibleName = d.Name + ", " + detail + ", " + d.LevelText;
             }
 
             protected override void OnPaint(PaintEventArgs e)
@@ -268,7 +270,7 @@ namespace BlueGauge
                 Color color = device.Charging ? Aqua : !device.Percent.HasValue ? Palette.Muted
                     : device.Percent <= Math.Min(10, threshold) ? Red : device.Percent <= threshold || device.Percent < 60 ? Amber : Green;
                 DrawBattery(g, new RectangleF(Width - P(76), mid - P(5), P(23), P(10)), device.Percent, color, k);
-                TextRenderer.DrawText(g, device.Percent.HasValue ? device.Percent + "%" : "—", Body,
+                TextRenderer.DrawText(g, device.LevelText, Body,
                     new Rectangle(Width - P(49), 0, P(38), Height), color, flags | TextFormatFlags.Right);
             }
         }

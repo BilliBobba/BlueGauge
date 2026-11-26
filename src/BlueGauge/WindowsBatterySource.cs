@@ -72,8 +72,11 @@ namespace BlueGauge
         private static async Task<BatteryDevice> ReadGroupAsync(List<Endpoint> group, List<PnpBatteryReader.Reading> pnp,
             SemaphoreSlim slots, CancellationToken token)
         {
-            var active = group.Where(e => e.Connected).ToArray();
-            var preferred = group.OrderByDescending(e => e.Connected).ThenBy(e => e.Le).First();
+            // AEP's cached connection flag can remain set after a headset disconnects.
+            var candidates = group.Where(e => e.Connected).ToArray();
+            var confirmed = await Task.WhenAll(candidates.Select(e => ConfirmConnectionAsync(e, token))).ConfigureAwait(false);
+            var active = candidates.Where((_, index) => confirmed[index]).ToArray();
+            var preferred = active.OrderBy(e => e.Le).FirstOrDefault() ?? group.OrderBy(e => e.Le).First();
             string id = group.Select(e => e.Container).Where(c => c != Guid.Empty).OrderBy(c => c).Select(c => c.ToString("D")).FirstOrDefault()
                 ?? group.Select(e => e.Address).Where(a => a != null).OrderBy(a => a, StringComparer.Ordinal).FirstOrDefault()
                 ?? preferred.Info.Id;
@@ -107,6 +110,26 @@ namespace BlueGauge
                 }
             }
             return new BatteryDevice(id, name, kind, active.Length != 0, percent);
+        }
+
+        private static async Task<bool> ConfirmConnectionAsync(Endpoint endpoint, CancellationToken token)
+        {
+            try
+            {
+                using var attempt = CancellationTokenSource.CreateLinkedTokenSource(token);
+                attempt.CancelAfter(TimeSpan.FromSeconds(2));
+                if (endpoint.Le)
+                {
+                    using var device = await BluetoothLEDevice.FromIdAsync(endpoint.Info.Id).AsTask(attempt.Token).ConfigureAwait(false);
+                    return device?.ConnectionStatus == BluetoothConnectionStatus.Connected;
+                }
+                using var classic = await BluetoothDevice.FromIdAsync(endpoint.Info.Id).AsTask(attempt.Token).ConfigureAwait(false);
+                return classic?.ConnectionStatus == BluetoothConnectionStatus.Connected;
+            }
+            catch (Exception ex) when (ex is COMException or UnauthorizedAccessException or InvalidOperationException or OperationCanceledException)
+            {
+                return false;
+            }
         }
 
         private static async Task<int?> ReadGattAsync(string id, CancellationToken token)
@@ -255,6 +278,33 @@ namespace BlueGauge
             }
             finally { SetupDiDestroyDeviceInfoList(handle); }
             return results;
+        }
+
+        // Only positively identified wired models: a generic USB audio endpoint may be a wireless receiver.
+        internal static bool IsHecateG2II(string id) => id.StartsWith(@"USB\VID_2D99&PID_0026&MI_00\", StringComparison.OrdinalIgnoreCase);
+
+        internal static IReadOnlyList<BatteryDevice> ReadWiredHeadsets(CancellationToken token)
+        {
+            var rows = new List<BatteryDevice>();
+            IntPtr set = SetupDiGetClassDevsW(IntPtr.Zero, "USB", IntPtr.Zero, AllPresentClasses);
+            if (set == new IntPtr(-1)) return rows;
+            try
+            {
+                var id = new StringBuilder(512);
+                for (uint index = 0; ; index++)
+                {
+                    token.ThrowIfCancellationRequested();
+                    var node = new DevInfoData { Size = Marshal.SizeOf<DevInfoData>() };
+                    if (!SetupDiEnumDeviceInfo(set, index, ref node)) break;
+                    id.Clear();
+                    if (!SetupDiGetDeviceInstanceIdW(set, ref node, id, (uint)id.Capacity, out _)) continue;
+                    if (IsHecateG2II(id.ToString()))
+                        rows.Add(new BatteryDevice(id.ToString(), "HECATE G2 II", DeviceKind.Headphones, true, null,
+                            DeviceTransport.UsbCable, usbPowered: true));
+                }
+            }
+            finally { SetupDiDestroyDeviceInfoList(set); }
+            return rows;
         }
 
         [StructLayout(LayoutKind.Sequential)]
